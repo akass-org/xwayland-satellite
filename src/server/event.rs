@@ -45,6 +45,18 @@ use wayland_server::protocol::{
     wl_buffer::WlBuffer, wl_keyboard::WlKeyboard, wl_output::WlOutput, wl_pointer::WlPointer,
     wl_seat::WlSeat, wl_touch::WlTouch,
 };
+use xcb::Xid;
+
+use std::sync::LazyLock;
+
+static DEF_SCALE: LazyLock<std::sync::Mutex<HashMap<u32, f64>>> =
+    LazyLock::new(|| std::sync::Mutex::new(HashMap::new()));
+
+pub fn get_def_scale(id: u32, def: f64) -> f64 {
+    let mut map = DEF_SCALE.lock().unwrap();
+    map.entry(id).or_insert(def);
+    *map.get(&id).unwrap()
+}
 
 #[derive(Copy, Clone)]
 pub(super) struct SurfaceScaleFactor(pub f64);
@@ -226,16 +238,24 @@ impl SurfaceEvents {
             let mut query = data.query::<(&SurfaceScaleFactor, &x::Window, &mut WindowData)>();
             let (scale_factor, window, window_data) = query.get().unwrap();
 
+            let def_scale = get_def_scale(window.resource_id(), scale_factor.0);
+            let ratio = (scale_factor.0 / def_scale) as f64;
+
+            debug!(
+                "window {:?} default scale: {def_scale}, scale {:?} ratio ===== {ratio:?}",
+                window, scale_factor.0
+            );
+
             let window = *window;
             let x = (pending.x as f64 * scale_factor.0) as i32 + window_data.output_offset.x;
             let y = (pending.y as f64 * scale_factor.0) as i32 + window_data.output_offset.y;
             let width = if pending.width > 0 {
-                (pending.width as f64 * scale_factor.0) as u16
+                (pending.width as f64 * scale_factor.0 * ratio) as u16
             } else {
                 window_data.attrs.dims.width
             };
             let height = if pending.height > 0 {
-                (pending.height as f64 * scale_factor.0) as u16
+                (pending.height as f64 * scale_factor.0 * ratio) as u16
             } else {
                 window_data.attrs.dims.height
             };
