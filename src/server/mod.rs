@@ -65,7 +65,7 @@ use wayland_server::{
     Client, DisplayHandle, Resource, WEnum,
 };
 use wl_drm::{client::wl_drm::WlDrm as WlDrmClient, server::wl_drm::WlDrm as WlDrmServer};
-use xcb::x;
+use xcb::{x, Xid};
 
 impl From<&x::CreateNotifyEvent> for WindowDims {
     fn from(value: &x::CreateNotifyEvent) -> Self {
@@ -1235,12 +1235,17 @@ impl<S: X11Selection + 'static> InnerServerState<S> {
 
             let (width, height) = (window_data.attrs.dims.width, window_data.attrs.dims.height);
             for (_, dimensions) in self.world.query::<&OutputDimensions>().iter() {
+
                 if dimensions.width == width as i32 && dimensions.height == height as i32 {
                     fullscreen = true;
                     popup_for = None;
                     break;
                 }
             }
+
+            let win = *self.world.get::<&x::Window>(entity).unwrap();
+
+            set_def_size(win.resource_id(), 0, 0);
         }
 
         let role = if let Some(parent) = popup_for {
@@ -1276,10 +1281,8 @@ impl<S: X11Selection + 'static> InnerServerState<S> {
         fullscreen: bool,
     ) -> ToplevelData {
         let window = self.world.get::<&WindowData>(entity).unwrap();
-        debug!(
-            "creating toplevel for {:?}",
-            *self.world.get::<&x::Window>(entity).unwrap()
-        );
+        let win = *self.world.get::<&x::Window>(entity).unwrap();
+        debug!("creating toplevel for {:?}", win);
 
         let toplevel = xdg.get_toplevel(&self.qh, entity);
         if let Some(hints) = &window.attrs.size_hints {

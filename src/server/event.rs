@@ -45,17 +45,25 @@ use wayland_server::protocol::{
     wl_buffer::WlBuffer, wl_keyboard::WlKeyboard, wl_output::WlOutput, wl_pointer::WlPointer,
     wl_seat::WlSeat, wl_touch::WlTouch,
 };
-use xcb::Xid;
 
 use std::sync::LazyLock;
+use xcb::Xid;
 
-static DEF_SCALE: LazyLock<std::sync::Mutex<HashMap<u32, f64>>> =
+static DEF_SIZE: LazyLock<std::sync::Mutex<HashMap<u32, (u16, u16)>>> =
     LazyLock::new(|| std::sync::Mutex::new(HashMap::new()));
 
-pub fn get_def_scale(id: u32, def: f64) -> f64 {
-    let mut map = DEF_SCALE.lock().unwrap();
-    map.entry(id).or_insert(def);
-    *map.get(&id).unwrap()
+pub fn set_def_size(id: u32, x: u16, y: u16) -> (u16, u16) {
+    let mut map = DEF_SIZE.lock().unwrap();
+    // map.entry(id).or_insert(def);
+    map.insert(id, (x, y));
+    let val = *map.get(&id).unwrap();
+    val
+}
+
+pub fn get_def_size(id: u32) -> (u16, u16) {
+    let map = DEF_SIZE.lock().unwrap();
+    let val = *map.get(&id).unwrap();
+    val
 }
 
 #[derive(Copy, Clone)]
@@ -238,24 +246,26 @@ impl SurfaceEvents {
             let mut query = data.query::<(&SurfaceScaleFactor, &x::Window, &mut WindowData)>();
             let (scale_factor, window, window_data) = query.get().unwrap();
 
-            let def_scale = get_def_scale(window.resource_id(), scale_factor.0);
-            let ratio = (scale_factor.0 / def_scale) as f64;
-
-            debug!(
-                "window {:?} default scale: {def_scale}, scale {:?} ratio ===== {ratio:?}",
-                window, scale_factor.0
-            );
+            let mut def_size = get_def_size(window.resource_id());
+            if def_size.0 == 0 || def_size.1 == 0 {
+                set_def_size(
+                    window.resource_id(),
+                    pending.width as u16,
+                    pending.height as u16,
+                );
+                def_size = (pending.width as u16, pending.height as u16);
+            }
 
             let window = *window;
             let x = (pending.x as f64 * scale_factor.0) as i32 + window_data.output_offset.x;
             let y = (pending.y as f64 * scale_factor.0) as i32 + window_data.output_offset.y;
             let width = if pending.width > 0 {
-                (pending.width as f64 * scale_factor.0 * ratio) as u16
+                (def_size.0 as f64 * scale_factor.0) as u16
             } else {
                 window_data.attrs.dims.width
             };
             let height = if pending.height > 0 {
-                (pending.height as f64 * scale_factor.0 * ratio) as u16
+                (def_size.1 as f64 * scale_factor.0) as u16
             } else {
                 window_data.attrs.dims.height
             };
@@ -630,7 +640,7 @@ impl Event for client::wl_pointer::Event {
                         }
 
                         if let Some(scale_val) = saved_scale {
-                             maybe_pos = Some((surface_x * scale_val, surface_y * scale_val));
+                            maybe_pos = Some((surface_x * scale_val, surface_y * scale_val));
                         }
 
                         if let Some((gx, gy)) = maybe_pos {
