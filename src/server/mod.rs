@@ -456,6 +456,8 @@ pub struct InnerServerState<S: X11Selection> {
     global_offset_updated: bool,
     updated_outputs: Vec<Entity>,
     new_scale: Option<f64>,
+    /// Last known pointer position in global coordinates (X screen space), if any.
+    last_pointer_pos: Option<(f64, f64)>,
 }
 
 impl<S: X11Selection> ServerState<NoConnection<S>> {
@@ -542,6 +544,7 @@ impl<S: X11Selection> ServerState<NoConnection<S>> {
             global_offset_updated: false,
             updated_outputs: Vec::new(),
             new_scale: None,
+            last_pointer_pos: None,
             decoration_manager,
             world: MyWorld::new(global_list),
         };
@@ -948,6 +951,12 @@ impl<S: X11Selection + 'static> InnerServerState<S> {
                     1.max((event.height() as f64 / scale_factor.0) as i32),
                 );
                 popup.popup.reposition(&popup.positioner, 0);
+                debug!(
+                    "popup {:?} {:?} {:?}",
+                    win.output_offset,
+                    event.x(),
+                    event.y()
+                );
             }
             SurfaceRole::Toplevel(Some(_)) => {
                 win.attrs.dims.width = dims.width;
@@ -1392,8 +1401,26 @@ impl<S: X11Selection + 'static> InnerServerState<S> {
             1.max((window.attrs.dims.width as f64 / initial_scale) as i32),
             1.max((window.attrs.dims.height as f64 / initial_scale) as i32),
         );
-        let x = ((window.attrs.dims.x - parent_dims.x) as f64 / initial_scale) as i32;
-        let y = ((window.attrs.dims.y - parent_dims.y) as f64 / initial_scale) as i32;
+
+        let mut x = 0;
+        let mut y = 0;
+
+        if window.attrs.dims.x == 0 && window.attrs.dims.y == 0 {
+            if let Some((last_x, last_y)) = self.last_pointer_pos {
+                // x = ((last_x as f64 - parent_dims.x as f64) as f64 / initial_scale) as i32;
+                // y = ((last_y as f64 - parent_dims.y as f64) as f64 / initial_scale) as i32;
+                x = (last_x / initial_scale) as i32;
+                y = (last_y / initial_scale) as i32;
+            }
+        } else {
+            x = ((window.attrs.dims.x - parent_dims.x) as f64 / initial_scale) as i32;
+            y = ((window.attrs.dims.y - parent_dims.y) as f64 / initial_scale) as i32;
+        }
+
+        debug!(
+            "x y {:?} parent x y {:?} res {:?} {:?} last_pos {:?}",
+            window.attrs.dims, parent_dims, x, y, self.last_pointer_pos
+        );
         positioner.set_offset(x, y);
         positioner.set_anchor(Anchor::TopLeft);
         positioner.set_gravity(Gravity::BottomRight);

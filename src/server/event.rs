@@ -605,17 +605,37 @@ impl Event for client::wl_pointer::Event {
                     }
                     None => {
                         drop(pending_enter);
-                        let (server, scale) = state
-                            .world
-                            .query_one_mut::<(&WlPointer, &SurfaceScaleFactor)>(target)
-                            .unwrap();
-                        trace!(
-                            target: "pointer_position",
-                            "pointer motion {} {}",
-                            surface_x * scale.0,
-                            surface_y * scale.0
-                        );
-                        server.motion(time, surface_x * scale.0, surface_y * scale.0);
+                        // Query pointer server and the surface scale factor (immutable borrow so we can
+                        // also read the current surface/window). We then compute a global coordinate
+                        // (window origin + scaled surface coords) and store it into the server state.
+                        // We'll first query the pointer and scale mutably to perform the motion
+                        // callback, then drop that borrow and query the world for the current
+                        // surface/window to compute global coords. This avoids borrow conflicts.
+                        let mut maybe_pos: Option<(f64, f64)> = None;
+                        let mut saved_scale = None;
+                        {
+                            let (server, scale) = state
+                                .world
+                                .query_one_mut::<(&WlPointer, &SurfaceScaleFactor)>(target)
+                                .unwrap();
+                            trace!(
+                                target: "pointer_position",
+                                "pointer motion {} {}",
+                                surface_x * scale.0,
+                                surface_y * scale.0
+                            );
+                            server.motion(time, surface_x * scale.0, surface_y * scale.0);
+                            // copy the scale out so we can use it after the mutable borrow ends
+                            saved_scale = Some(scale.0);
+                        }
+
+                        if let Some(scale_val) = saved_scale {
+                             maybe_pos = Some((surface_x * scale_val, surface_y * scale_val));
+                        }
+
+                        if let Some((gx, gy)) = maybe_pos {
+                            state.inner.last_pointer_pos = Some((gx, gy));
+                        }
                     }
                 }
             }
