@@ -146,7 +146,8 @@ impl Selection {
     }
 
     fn check_for_incr(&self, event: &x::PropertyNotifyEvent) -> bool {
-        if event.window() != self.window || event.state() != x::Property::NewValue {
+        debug_assert_eq!(event.state(), x::Property::NewValue);
+        if event.window() != self.window {
             return false;
         }
 
@@ -162,12 +163,71 @@ impl Selection {
     }
 }
 
+pub struct WaylandIncrInfo {
+    data: Vec<u8>,
+    start: usize,
+    property: x::Atom,
+    target_window: x::Window,
+    target_type: x::Atom,
+    max_req_bytes: usize,
+}
+
+pub struct WaylandSelection<T: SelectionType> {
+    mimes: Vec<SelectionTargetId>,
+    inner: ForeignSelection<T>,
+    incr_data: Option<WaylandIncrInfo>,
+}
+
+impl<T: SelectionType> WaylandSelection<T> {
+    fn check_for_incr(
+        &mut self,
+        event: &x::PropertyNotifyEvent,
+        connection: &xcb::Connection,
+    ) -> bool {
+        let Some(incr_data) = self.incr_data.as_mut() else {
+            return false;
+        };
+        if incr_data.property != event.atom() {
+            return false;
+        }
+
+        let incr_end = std::cmp::min(
+            incr_data.max_req_bytes + incr_data.start,
+            incr_data.data.len(),
+        );
+
+        if let Err(e) = connection.send_and_check_request(&x::ChangeProperty {
+            mode: x::PropMode::Append,
+            window: incr_data.target_window,
+            property: incr_data.property,
+            r#type: incr_data.target_type,
+            data: &incr_data.data[incr_data.start..incr_end],
+        }) {
+            warn!("failed to write selection data: {e:?}");
+            self.incr_data = None;
+            return true;
+        }
+
+        if incr_data.start == incr_end {
+            debug!(
+                "completed incr for mime {}",
+                get_atom_name(connection, incr_data.target_type)
+            );
+            self.incr_data = None;
+        } else {
+            debug!(
+                "received some incr data for {}",
+                get_atom_name(connection, incr_data.target_type)
+            );
+            incr_data.start = incr_end;
+        }
+        true
+    }
+}
+
 enum CurrentSelection<T: SelectionType> {
     X11(Rc<Selection>),
-    Wayland {
-        mimes: Vec<SelectionTargetId>,
-        inner: ForeignSelection<T>,
-    },
+    Wayland(WaylandSelection<T>),
 }
 
 struct SelectionData<T: SelectionType> {
@@ -178,7 +238,7 @@ struct SelectionData<T: SelectionType> {
 
 // This is a trait so that we can use &dyn
 trait SelectionDataImpl {
-    fn set_owner(&self, connection: &xcb::Connection, wm_window: x::Window);
+    fn set_owner(&self, connection: &xcb::Connection, wm_window: x::Window) -> bool;
     fn handle_new_owner(
         &mut self,
         connection: &xcb::Connection,
@@ -198,14 +258,13 @@ trait SelectionDataImpl {
     );
     fn x11_selection(&self) -> Option<&Selection>;
     fn handle_selection_request(
-        &self,
+        &mut self,
         connection: &xcb::Connection,
         atoms: &super::Atoms,
         request: &x::SelectionRequestEvent,
-        success: &dyn Fn(),
-        refuse: &dyn Fn(),
+        max_req_bytes: usize,
         server_state: &mut RealServerState,
-    );
+    ) -> bool;
     fn atom(&self) -> x::Atom;
 }
 
@@ -217,33 +276,53 @@ impl<T: SelectionType> SelectionData<T> {
             current_selection: None,
         }
     }
+    fn wayland_selection_mut(&mut self) -> Option<&mut WaylandSelection<T>> {
+        match &mut self.current_selection {
+            Some(CurrentSelection::Wayland(sel)) => Some(sel),
+            _ => None,
+        }
+    }
 }
 
 impl<T: SelectionType> SelectionDataImpl for SelectionData<T> {
     fn atom(&self) -> x::Atom {
         self.atom
     }
-    fn set_owner(&self, connection: &xcb::Connection, wm_window: x::Window) {
-        connection
-            .send_and_check_request(&x::SetSelectionOwner {
-                owner: wm_window,
-                selection: self.atom,
-                time: self.last_selection_timestamp,
-            })
-            .unwrap();
-
-        let reply = connection
-            .wait_for_reply(connection.send_request(&x::GetSelectionOwner {
-                selection: self.atom,
-            }))
-            .unwrap();
-
-        if reply.owner() != wm_window {
+    fn set_owner(&self, connection: &xcb::Connection, wm_window: x::Window) -> bool {
+        if let Err(e) = connection.send_and_check_request(&x::SetSelectionOwner {
+            owner: wm_window,
+            selection: self.atom,
+            time: self.last_selection_timestamp,
+        }) {
             warn!(
-                "Could not get {} selection (owned by {:?})",
-                get_atom_name(connection, self.atom),
-                reply.owner()
+                "Could not become owner of {}: {e:?}",
+                get_atom_name(connection, self.atom)
             );
+            return false;
+        };
+
+        match connection.wait_for_reply(connection.send_request(&x::GetSelectionOwner {
+            selection: self.atom,
+        })) {
+            Ok(reply) => {
+                if reply.owner() != wm_window {
+                    warn!(
+                        "Could not become owner of {} (owned by {:?})",
+                        get_atom_name(connection, self.atom),
+                        reply.owner()
+                    );
+                    false
+                } else {
+                    true
+                }
+            }
+            Err(e) => {
+                warn!(
+                    "Could not validate ownership of {}: {e:?}",
+                    get_atom_name(connection, self.atom)
+                );
+                false
+            }
         }
     }
 
@@ -255,21 +334,26 @@ impl<T: SelectionType> SelectionDataImpl for SelectionData<T> {
         owner: x::Window,
         timestamp: u32,
     ) {
-        debug!(
-            "new {} owner: {owner:?}",
-            get_atom_name(connection, self.atom)
-        );
-        self.last_selection_timestamp = timestamp;
         // Grab targets
-        connection
-            .send_and_check_request(&x::ConvertSelection {
-                requestor: wm_window,
-                selection: self.atom,
-                target: atoms.targets,
-                property: atoms.selection_reply,
-                time: timestamp,
-            })
-            .unwrap();
+        match connection.send_and_check_request(&x::ConvertSelection {
+            requestor: wm_window,
+            selection: self.atom,
+            target: atoms.targets,
+            property: atoms.selection_reply,
+            time: timestamp,
+        }) {
+            Ok(_) => {
+                debug!(
+                    "new {} owner: {owner:?}",
+                    get_atom_name(connection, self.atom)
+                );
+                self.last_selection_timestamp = timestamp;
+            }
+            Err(e) => warn!(
+                "could not set new {} owner: {e:?}",
+                get_atom_name(connection, self.atom)
+            ),
+        }
     }
 
     fn handle_target_list(
@@ -281,16 +365,20 @@ impl<T: SelectionType> SelectionDataImpl for SelectionData<T> {
         dest_property: x::Atom,
         server_state: &mut RealServerState,
     ) {
-        let reply = connection
-            .wait_for_reply(connection.send_request(&x::GetProperty {
-                delete: true,
-                window: wm_window,
-                property: dest_property,
-                r#type: x::ATOM_ATOM,
-                long_offset: 0,
-                long_length: 20,
-            }))
-            .unwrap();
+        let reply = match connection.wait_for_reply(connection.send_request(&x::GetProperty {
+            delete: true,
+            window: wm_window,
+            property: dest_property,
+            r#type: x::ATOM_ATOM,
+            long_offset: 0,
+            long_length: 20,
+        })) {
+            Ok(reply) => reply,
+            Err(e) => {
+                warn!("Could not obtain target list: {e:?}");
+                return;
+            }
+        };
 
         let targets: &[x::Atom] = reply.value();
         if targets.is_empty() {
@@ -359,52 +447,89 @@ impl<T: SelectionType> SelectionDataImpl for SelectionData<T> {
     }
 
     fn handle_selection_request(
-        &self,
+        &mut self,
         connection: &xcb::Connection,
         atoms: &super::Atoms,
         request: &x::SelectionRequestEvent,
-        success: &dyn Fn(),
-        refuse: &dyn Fn(),
+        max_req_bytes: usize,
         server_state: &mut RealServerState,
-    ) {
-        let Some(CurrentSelection::Wayland { mimes, inner }) = &self.current_selection else {
+    ) -> bool {
+        let Some(CurrentSelection::Wayland(WaylandSelection {
+            mimes,
+            inner,
+            ref mut incr_data,
+        })) = &mut self.current_selection
+        else {
             warn!("Got selection request, but we don't seem to be the selection owner");
-            refuse();
-            return;
+            return false;
         };
 
-        match request.target() {
-            x if x == atoms.targets => {
-                let atoms: Box<[x::Atom]> = mimes.iter().map(|t| t.atom).collect();
+        let req_target = request.target();
+        if req_target == atoms.targets {
+            let atoms: Box<[x::Atom]> = mimes.iter().map(|t| t.atom).collect();
 
-                connection
-                    .send_and_check_request(&x::ChangeProperty {
-                        mode: x::PropMode::Replace,
-                        window: request.requestor(),
-                        property: request.property(),
-                        r#type: x::ATOM_ATOM,
-                        data: &atoms,
-                    })
-                    .unwrap();
-
-                success();
+            match connection.send_and_check_request(&x::ChangeProperty {
+                mode: x::PropMode::Replace,
+                window: request.requestor(),
+                property: request.property(),
+                r#type: x::ATOM_ATOM,
+                data: &atoms,
+            }) {
+                Ok(_) => true,
+                Err(e) => {
+                    warn!("Failed to set targets for selection request: {e:?}");
+                    false
+                }
             }
-            other => {
-                let Some(target) = mimes.iter().find(|t| t.atom == other) else {
-                    if log::log_enabled!(log::Level::Debug) {
-                        let name = get_atom_name(connection, other);
-                        debug!("refusing selection request because given atom could not be found ({name})");
-                    }
-                    refuse();
-                    return;
-                };
+        } else {
+            let Some(target) = mimes.iter().find(|t| t.atom == req_target) else {
+                if log::log_enabled!(log::Level::Debug) {
+                    let name = get_atom_name(connection, req_target);
+                    debug!(
+                        "refusing selection request because given atom could not be found ({name})"
+                    );
+                }
+                return false;
+            };
 
-                let mime_name = target
-                    .source
-                    .as_ref()
-                    .cloned()
-                    .unwrap_or_else(|| target.name.clone());
-                let data = inner.receive(mime_name, server_state);
+            let mime_name = target
+                .source
+                .as_ref()
+                .cloned()
+                .unwrap_or_else(|| target.name.clone());
+            let data = inner.receive(mime_name, server_state);
+            if data.len() > max_req_bytes {
+                if let Err(e) = connection.send_and_check_request(&x::ChangeWindowAttributes {
+                    window: request.requestor(),
+                    value_list: &[x::Cw::EventMask(x::EventMask::PROPERTY_CHANGE)],
+                }) {
+                    warn!("Failed to set up property change notifications: {e:?}");
+                    return false;
+                }
+                if let Err(e) = connection.send_and_check_request(&x::ChangeProperty {
+                    mode: x::PropMode::Replace,
+                    window: request.requestor(),
+                    property: request.property(),
+                    r#type: atoms.incr,
+                    data: &[data.len() as u32],
+                }) {
+                    warn!("Failed to set incr property for large transfer: {e:?}");
+                    return false;
+                }
+                debug!(
+                    "beginning incr for {}",
+                    get_atom_name(connection, target.atom)
+                );
+                *incr_data = Some(WaylandIncrInfo {
+                    data,
+                    start: 0,
+                    target_window: request.requestor(),
+                    property: request.property(),
+                    target_type: target.atom,
+                    max_req_bytes,
+                });
+                true
+            } else {
                 match connection.send_and_check_request(&x::ChangeProperty {
                     mode: x::PropMode::Replace,
                     window: request.requestor(),
@@ -412,10 +537,10 @@ impl<T: SelectionType> SelectionDataImpl for SelectionData<T> {
                     r#type: target.atom,
                     data: &data,
                 }) {
-                    Ok(_) => success(),
+                    Ok(_) => true,
                     Err(e) => {
                         warn!("Failed setting selection property: {e:?}");
-                        refuse();
+                        false
                     }
                 }
             }
@@ -503,14 +628,20 @@ impl XState {
             });
         }
 
-        self.selection_state.clipboard.current_selection = Some(CurrentSelection::Wayland {
-            mimes,
-            inner: selection,
-        });
-        self.selection_state
+        if self
+            .selection_state
             .clipboard
-            .set_owner(&self.connection, self.wm_window);
-        debug!("Clipboard set from Wayland");
+            .set_owner(&self.connection, self.wm_window)
+        {
+            self.selection_state.clipboard.current_selection =
+                Some(CurrentSelection::Wayland(WaylandSelection {
+                    mimes,
+                    inner: selection,
+                    incr_data: None,
+                }));
+
+            debug!("Clipboard set from Wayland");
+        }
     }
 
     pub(crate) fn set_primary_selection(&mut self, selection: ForeignSelection<Primary>) {
@@ -559,14 +690,19 @@ impl XState {
             });
         }
 
-        self.selection_state.primary.current_selection = Some(CurrentSelection::Wayland {
-            mimes,
-            inner: selection,
-        });
-        self.selection_state
+        if self
+            .selection_state
             .primary
-            .set_owner(&self.connection, self.wm_window);
-        debug!("Primaryset from Wayland");
+            .set_owner(&self.connection, self.wm_window)
+        {
+            self.selection_state.primary.current_selection =
+                Some(CurrentSelection::Wayland(WaylandSelection {
+                    mimes,
+                    inner: selection,
+                    incr_data: None,
+                }));
+            debug!("Primary set from Wayland");
+        }
     }
 
     pub(super) fn handle_selection_event(
@@ -672,14 +808,17 @@ impl XState {
                     return true;
                 }
 
-                data.handle_selection_request(
+                if data.handle_selection_request(
                     &self.connection,
                     &self.atoms,
                     e,
-                    &success,
-                    &refuse,
+                    self.max_req_bytes,
                     server_state,
-                );
+                ) {
+                    success()
+                } else {
+                    refuse()
+                }
             }
 
             xcb::Event::XFixes(xcb::xfixes::Event::SelectionNotify(e)) => match e.selection() {
@@ -721,19 +860,36 @@ impl XState {
         true
     }
 
+    /// Check if a PropertyNotifyEvent refers to a supported selection property, then make progress
+    /// on an incremental data transfer if that property is in that process.
+    /// Returns `true` if an attempt at progressing the data transfer was made, whether or not it
+    /// succeeded, and `false` otherwise (e.g. the event does not target a selection property or
+    /// that property is not in the process of an incremental data transfer)
     pub(super) fn handle_selection_property_change(
         &mut self,
         event: &x::PropertyNotifyEvent,
     ) -> bool {
-        for data in [
-            &self.selection_state.primary as &dyn SelectionDataImpl,
-            &self.selection_state.clipboard as _,
-        ] {
-            if let Some(selection) = &data.x11_selection() {
-                return selection.check_for_incr(event);
+        fn inner<T: SelectionType>(
+            connection: &xcb::Connection,
+            event: &x::PropertyNotifyEvent,
+            data: &mut SelectionData<T>,
+        ) -> bool {
+            match event.state() {
+                x::Property::NewValue => {
+                    if let Some(selection) = &data.x11_selection() {
+                        return selection.check_for_incr(event);
+                    }
+                }
+                x::Property::Delete => {
+                    if let Some(selection) = data.wayland_selection_mut() {
+                        return selection.check_for_incr(event, connection);
+                    }
+                }
             }
+            false
         }
-        false
+        inner(&self.connection, event, &mut self.selection_state.primary)
+            || inner(&self.connection, event, &mut self.selection_state.clipboard)
     }
 }
 
