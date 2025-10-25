@@ -246,26 +246,28 @@ impl SurfaceEvents {
             let mut query = data.query::<(&SurfaceScaleFactor, &x::Window, &mut WindowData)>();
             let (scale_factor, window, window_data) = query.get().unwrap();
 
-            let mut def_size = get_def_size(window.resource_id());
-            if def_size.0 == 0 || def_size.1 == 0 {
-                set_def_size(
-                    window.resource_id(),
-                    pending.width as u16,
-                    pending.height as u16,
-                );
-                def_size = (pending.width as u16, pending.height as u16);
-            }
+            // let mut def_size = get_def_size(window.resource_id());
+            // if def_size.0 == 0 || def_size.1 == 0 {
+            //     set_def_size(
+            //         window.resource_id(),
+            //         pending.width as u16,
+            //         pending.height as u16,
+            //     );
+            //     def_size = (pending.width as u16, pending.height as u16);
+            // }
+
+            // debug!("def_size {:?}",def_size);
 
             let window = *window;
             let x = (pending.x as f64 * scale_factor.0) as i32 + window_data.output_offset.x;
             let y = (pending.y as f64 * scale_factor.0) as i32 + window_data.output_offset.y;
             let width = if pending.width > 0 {
-                (def_size.0 as f64 * scale_factor.0) as u16
+                (pending.width as f64 * scale_factor.0) as u16
             } else {
                 window_data.attrs.dims.width
             };
             let height = if pending.height > 0 {
-                (def_size.1 as f64 * scale_factor.0) as u16
+                (pending.height as f64 * scale_factor.0) as u16
             } else {
                 window_data.attrs.dims.height
             };
