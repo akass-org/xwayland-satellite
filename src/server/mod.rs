@@ -25,6 +25,7 @@ use wayland_protocols::xdg::decoration::zv1::client::zxdg_decoration_manager_v1:
 use wayland_protocols::xdg::decoration::zv1::client::zxdg_toplevel_decoration_v1::{
     self, ZxdgToplevelDecorationV1,
 };
+use wayland_protocols::xdg::shell::client::xdg_positioner::ConstraintAdjustment;
 use wayland_protocols::{
     wp::{
         fractional_scale::v1::client::wp_fractional_scale_manager_v1::WpFractionalScaleManagerV1,
@@ -1216,7 +1217,8 @@ impl<S: X11Selection + 'static> InnerServerState<S> {
         }
     }
 
-    fn create_role_window(&mut self, window: x::Window, entity: Entity) {
+    /// Returns true if the created window is a toplevel.
+    fn create_role_window(&mut self, window: x::Window, entity: Entity) -> bool {
         let xdg_surface;
         let mut popup_for = None;
         let mut fullscreen = false;
@@ -1249,12 +1251,12 @@ impl<S: X11Selection + 'static> InnerServerState<S> {
             set_def_size(win.resource_id(), 0, 0);
         }
 
-        let role = if let Some(parent) = popup_for {
+        let (role, is_toplevel) = if let Some(parent) = popup_for {
             let data = self.create_popup(entity, xdg_surface, parent);
-            SurfaceRole::Popup(Some(data))
+            (SurfaceRole::Popup(Some(data)), false)
         } else {
             let data = self.create_toplevel(entity, xdg_surface, fullscreen);
-            SurfaceRole::Toplevel(Some(data))
+            (SurfaceRole::Toplevel(Some(data)), true)
         };
 
         let (surface_role, client) = self
@@ -1273,6 +1275,8 @@ impl<S: X11Selection + 'static> InnerServerState<S> {
 
         client.commit();
         self.world.insert(entity, (role,)).unwrap();
+
+        is_toplevel
     }
 
     fn create_toplevel(
@@ -1282,8 +1286,10 @@ impl<S: X11Selection + 'static> InnerServerState<S> {
         fullscreen: bool,
     ) -> ToplevelData {
         let window = self.world.get::<&WindowData>(entity).unwrap();
-        let win = *self.world.get::<&x::Window>(entity).unwrap();
-        debug!("creating toplevel for {:?}", win);
+        debug!(
+            "creating toplevel for {:?} fullscreen: {fullscreen:?}",
+            *self.world.get::<&x::Window>(entity).unwrap()
+        );
 
         let toplevel = xdg.get_toplevel(&self.qh, entity);
         if let Some(hints) = &window.attrs.size_hints {
@@ -1434,6 +1440,8 @@ impl<S: X11Selection + 'static> InnerServerState<S> {
             (parent_window.attrs.dims.width as f64 / initial_scale) as i32,
             (parent_window.attrs.dims.height as f64 / initial_scale) as i32,
         );
+        positioner
+            .set_constraint_adjustment(ConstraintAdjustment::SlideX | ConstraintAdjustment::SlideY);
         let popup = xdg.get_popup(
             Some(&parent_role.xdg().unwrap().surface),
             &positioner,

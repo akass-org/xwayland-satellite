@@ -259,8 +259,8 @@ impl SurfaceEvents {
             // debug!("def_size {:?}",def_size);
 
             let window = *window;
-            let x = (pending.x as f64 * scale_factor.0) as i32 + window_data.output_offset.x;
-            let y = (pending.y as f64 * scale_factor.0) as i32 + window_data.output_offset.y;
+            let x = (pending.x.max(0) as f64 * scale_factor.0) as i32 + window_data.output_offset.x;
+            let y = (pending.y.max(0) as f64 * scale_factor.0) as i32 + window_data.output_offset.y;
             let width = if pending.width > 0 {
                 (pending.width as f64 * scale_factor.0) as u16
             } else {
