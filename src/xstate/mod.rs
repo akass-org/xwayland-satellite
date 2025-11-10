@@ -485,85 +485,7 @@ impl XState {
                     ));
                 }
                 xcb::Event::X(x::Event::ClientMessage(e)) => {
-                    match e.r#type() {
-                        x if x == self.atoms.wl_surface_id => {
-                            panic!(concat!(
-                            "Xserver should be using WL_SURFACE_SERIAL, not WL_SURFACE_ID\n",
-                            "Your Xwayland is likely too old, it should be version 23.1 or greater."
-                        ));
-                        }
-                        x if x == self.atoms.wl_surface_serial => {
-                            let x::ClientMessageData::Data32(data) = e.data() else {
-                                unreachable!();
-                            };
-                            server_state.set_window_serial(e.window(), [data[0], data[1]]);
-                        }
-                        x if x == self.atoms.net_wm_state => {
-                            let x::ClientMessageData::Data32(data) = e.data() else {
-                                unreachable!();
-                            };
-                            let Ok(action) = SetState::try_from(data[0]) else {
-                                warn!("unknown action for _NET_WM_STATE: {}", data[0]);
-                                continue;
-                            };
-                            let prop1 = unsafe { x::Atom::new(data[1]) };
-                            let prop2 = unsafe { x::Atom::new(data[2]) };
-
-                            trace!("_NET_WM_STATE ({action:?}) props: {prop1:?} {prop2:?}");
-
-                            for prop in [prop1, prop2] {
-                                match prop {
-                                    x if x == self.atoms.wm_fullscreen => {
-                                        server_state.set_fullscreen(e.window(), action);
-                                    }
-                                    _ => {}
-                                }
-                            }
-                        }
-                        x if x == self.atoms.active_win => {
-                            server_state.activate_window(e.window());
-                        }
-                        x if x == self.atoms.moveresize => {
-                            let x::ClientMessageData::Data32(data) = e.data() else {
-                                unreachable!();
-                            };
-
-                            let (_x_root, _y_root) = (data[0], data[1]);
-                            let Ok(direction) = MoveResizeDirection::try_from(data[2]) else {
-                                warn!("unknown direction for _NET_WM_MOVERESIZE: {}", data[2]);
-                                continue;
-                            };
-                            let button = data[3];
-                            // XXX: This can technically be driven by keyboard events and other mouse buttons as well,
-                            // but I haven't found an application that does this yet. We'll cross that bridge when we get to it.
-                            if button != 1 {
-                                warn!("Attempted move/resize of {:?} with non left click button ({button})", e.window());
-                                continue;
-                            }
-
-                            match direction {
-                                MoveResizeDirection::Move => {
-                                    server_state.move_window(e.window());
-                                }
-                                MoveResizeDirection::SizeTopLeft
-                                | MoveResizeDirection::SizeTop
-                                | MoveResizeDirection::SizeTopRight
-                                | MoveResizeDirection::SizeRight
-                                | MoveResizeDirection::SizeBottomRight
-                                | MoveResizeDirection::SizeBottom
-                                | MoveResizeDirection::SizeBottomLeft
-                                | MoveResizeDirection::SizeLeft => {
-                                    server_state.resize_window(e.window(), direction);
-                                }
-                                MoveResizeDirection::SizeKeyboard
-                                | MoveResizeDirection::MoveKeyboard
-                                | MoveResizeDirection::Cancel => {
-                                    warn!("Unimplemented window move/resize action: {direction:?} ({:?})", e.window());
-                                }
-                            }
-                        }
-                        t => warn!("unrecognized message: {t:?}"),
-                    }
+                    self.handle_client_message(e, server_state);
                 }
                 xcb::Event::X(x::Event::MappingNotify(_)) => {}
                 xcb::Event::RandR(xcb::randr::Event::Notify(e))
@@ -577,6 +499,101 @@ impl XState {
             }
 
             server_state.run();
+        }
+    }
+
+    fn handle_client_message(
+        &self,
+        e: x::ClientMessageEvent,
+        server_state: &mut super::RealServerState,
+    ) {
+        match e.r#type() {
+            x if x == self.atoms.wl_surface_id => {
+                panic!(concat!(
+                    "Xserver should be using WL_SURFACE_SERIAL, not WL_SURFACE_ID\n",
+                    "Your Xwayland is likely too old, it should be version 23.1 or greater."
+                ));
+            }
+            x if x == self.atoms.wl_surface_serial => {
+                let x::ClientMessageData::Data32(data) = e.data() else {
+                    unreachable!();
+                };
+                server_state.set_window_serial(e.window(), [data[0], data[1]]);
+            }
+            x if x == self.atoms.net_wm_state => {
+                let x::ClientMessageData::Data32(data) = e.data() else {
+                    unreachable!();
+                };
+                let Ok(action) = SetState::try_from(data[0]) else {
+                    warn!("unknown action for _NET_WM_STATE: {}", data[0]);
+                    return;
+                };
+                let prop1 = unsafe { x::Atom::new(data[1]) };
+                let prop2 = unsafe { x::Atom::new(data[2]) };
+
+                trace!("_NET_WM_STATE ({action:?}) props: {prop1:?} {prop2:?}");
+
+                for prop in [prop1, prop2] {
+                    match prop {
+                        x if x == self.atoms.wm_fullscreen => {
+                            server_state.set_fullscreen(e.window(), action);
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            x if x == self.atoms.active_win => {
+                server_state.activate_window(e.window());
+            }
+            x if x == self.atoms.moveresize => {
+                let x::ClientMessageData::Data32(data) = e.data() else {
+                    unreachable!();
+                };
+
+                let (_x_root, _y_root) = (data[0], data[1]);
+                let Ok(direction) = MoveResizeDirection::try_from(data[2]) else {
+                    warn!("unknown direction for _NET_WM_MOVERESIZE: {}", data[2]);
+                    return;
+                };
+                let button = data[3];
+                // XXX: This can technically be driven by keyboard events and other mouse buttons as well,
+                // but I haven't found an application that does this yet. We'll cross that bridge when we get to it.
+                if button != 1 {
+                    warn!(
+                        "Attempted move/resize of {:?} with non left click button ({button})",
+                        e.window()
+                    );
+                    return;
+                }
+
+                match direction {
+                    MoveResizeDirection::Move => {
+                        server_state.move_window(e.window());
+                    }
+                    MoveResizeDirection::SizeTopLeft
+                    | MoveResizeDirection::SizeTop
+                    | MoveResizeDirection::SizeTopRight
+                    | MoveResizeDirection::SizeRight
+                    | MoveResizeDirection::SizeBottomRight
+                    | MoveResizeDirection::SizeBottom
+                    | MoveResizeDirection::SizeBottomLeft
+                    | MoveResizeDirection::SizeLeft => {
+                        server_state.resize_window(e.window(), direction);
+                    }
+                    MoveResizeDirection::SizeKeyboard
+                    | MoveResizeDirection::MoveKeyboard
+                    | MoveResizeDirection::Cancel => {
+                        warn!(
+                            "Unimplemented window move/resize action: {direction:?} ({:?})",
+                            e.window()
+                        );
+                    }
+                }
+            }
+            t => warn!(
+                "unrecognized message: {:?}",
+                get_atom_name(&self.connection, t)
+            ),
         }
     }
 
@@ -703,6 +720,8 @@ impl XState {
                 }
                 x if [
                     self.window_atoms.menu,
+                    self.window_atoms.popup_menu,
+                    self.window_atoms.dropdown_menu,
                     self.window_atoms.tooltip,
                     self.window_atoms.drag_n_drop,
                 ]
@@ -979,15 +998,16 @@ xcb::atoms_struct! {
         motif_wm_hints => b"_MOTIF_WM_HINTS" only_if_exists = false,
         utf8_string => b"UTF8_STRING" only_if_exists = false,
         clipboard => b"CLIPBOARD" only_if_exists = false,
+        clipboard_targets => b"_clipboard_targets" only_if_exists = false,
         targets => b"TARGETS" only_if_exists = false,
         save_targets => b"SAVE_TARGETS" only_if_exists = false,
         multiple => b"MULTIPLE" only_if_exists = false,
         timestamp => b"TIMESTAMP" only_if_exists = false,
-        selection_reply => b"_selection_reply" only_if_exists = false,
         incr => b"INCR" only_if_exists = false,
         xsettings => b"_XSETTINGS_S0" only_if_exists = false,
         xsettings_settings => b"_XSETTINGS_SETTINGS" only_if_exists = false,
         primary => b"PRIMARY" only_if_exists = false,
+        primary_targets => b"_primary_targets" only_if_exists = false,
         moveresize => b"_NET_WM_MOVERESIZE" only_if_exists = false,
     }
 }
@@ -1000,6 +1020,8 @@ xcb::atoms_struct! {
         drag_n_drop => b"_NET_WM_WINDOW_TYPE_DND" only_if_exists = false,
         splash => b"_NET_WM_WINDOW_TYPE_SPLASH" only_if_exists = false,
         menu => b"_NET_WM_WINDOW_TYPE_MENU" only_if_exists = false,
+        popup_menu => b"_NET_WM_WINDOW_TYPE_POPUP_MENU" only_if_exists = false,
+        dropdown_menu => b"_NET_WM_WINDOW_TYPE_DROPDOWN_MENU" only_if_exists = false,
         utility => b"_NET_WM_WINDOW_TYPE_UTILITY" only_if_exists = false,
         tooltip => b"_NET_WM_WINDOW_TYPE_TOOLTIP" only_if_exists = false,
     }
@@ -1401,6 +1423,9 @@ impl XConnection for RealConnection {
 fn get_atom_name(connection: &xcb::Connection, atom: x::Atom) -> String {
     match connection.wait_for_reply(connection.send_request(&x::GetAtomName { atom })) {
         Ok(reply) => reply.name().to_string(),
-        Err(err) => format!("<error getting atom name: {err:?}> {atom:?}"),
+        Err(err) => {
+            warn!("<error getting atom name: {err:?}> {atom:?}");
+            format!("ATOM_{}", atom.resource_id())
+        }
     }
 }

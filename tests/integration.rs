@@ -126,7 +126,7 @@ impl Fixture {
     fn new_preset(pre_connect: impl FnOnce(&mut testwl::Server)) -> Self {
         static INIT: Once = Once::new();
         INIT.call_once(|| {
-            pretty_env_logger::env_logger::builder()
+            pretty_env_logger::formatted_timed_builder()
                 .is_test(true)
                 .filter_level(log::LevelFilter::Debug)
                 .parse_default_env()
@@ -340,6 +340,8 @@ xcb::atoms_struct! {
         win_type => b"_NET_WM_WINDOW_TYPE",
         win_type_normal => b"_NET_WM_WINDOW_TYPE_NORMAL",
         win_type_menu => b"_NET_WM_WINDOW_TYPE_MENU",
+        win_type_popup_menu => b"_NET_WM_WINDOW_TYPE_POPUP_MENU",
+        win_type_dropdown_menu => b"_NET_WM_WINDOW_TYPE_DROPDOWN_MENU",
         win_type_tooltip => b"_NET_WM_WINDOW_TYPE_TOOLTIP",
         win_type_dnd => b"_NET_WM_WINDOW_TYPE_DND",
         motif_wm_hints => b"_MOTIF_WM_HINTS" only_if_exists = false,
@@ -992,17 +994,21 @@ fn copy_from_x11() {
 
     let window = connection.new_window(connection.root, 0, 0, 20, 20, false);
     f.map_as_toplevel(&mut connection, window);
+
+    connection.set_selection_owner(window, connection.atoms.primary);
     connection.set_selection_owner(window, connection.atoms.clipboard);
 
-    let request = connection.await_selection_request();
-    assert_eq!(request.target(), connection.atoms.targets);
-    connection.set_property(
-        request.requestor(),
-        x::ATOM_ATOM,
-        request.property(),
-        &[connection.atoms.mime1, connection.atoms.mime2],
-    );
-    connection.send_selection_notify(&request);
+    for _ in [connection.atoms.primary, connection.atoms.clipboard] {
+        let request = connection.await_selection_request();
+        assert_eq!(request.target(), connection.atoms.targets);
+        connection.set_property(
+            request.requestor(),
+            x::ATOM_ATOM,
+            request.property(),
+            &[connection.atoms.mime1, connection.atoms.mime2],
+        );
+        connection.send_selection_notify(&request);
+    }
     f.wait_and_dispatch();
 
     struct MimeData {
@@ -1026,21 +1032,37 @@ fn copy_from_x11() {
         },
     ];
 
-    let advertised_mimes = f.testwl.data_source_mimes();
+    // When requesting both primary and clipboard simultaneously, the first to be requested erases
+    // its TARGETS (which is the correct behavior of a GetProperty request), but the second still
+    // tried to use this data and would come up empty.
+    let primary_mimes = f.testwl.primary_source_mimes();
+    let clipboard_mimes = f.testwl.data_source_mimes();
     assert_eq!(
-        advertised_mimes.len(),
+        primary_mimes.len(),
         mimes_truth.len(),
-        "Wrong number of advertised mimes: {advertised_mimes:?}"
+        "Wrong number of advertised primary mimes: {primary_mimes:?}"
+    );
+    assert_eq!(
+        clipboard_mimes.len(),
+        mimes_truth.len(),
+        "Wrong number of advertised clipboard mimes: {clipboard_mimes:?}"
     );
     for MimeData { data, .. } in &mimes_truth {
         assert!(
-            advertised_mimes.contains(&data.mime_type),
+            primary_mimes.contains(&data.mime_type),
+            "Missing mime type {}",
+            data.mime_type
+        );
+        assert!(
+            clipboard_mimes.contains(&data.mime_type),
             "Missing mime type {}",
             data.mime_type
         );
     }
 
-    let data = f.testwl.clipboard_paste_data(|mime, _| {
+    // Type annotations hint the compiler to use HRTBs (needed since this closure is reused).
+    // See: https://users.rust-lang.org/t/implementation-of-fnonce-is-not-general-enough/68294/3
+    let mut send_data_for_mime = |mime: &str, _: &mut testwl::Server| {
         let request = connection.await_selection_request();
         let data = mimes_truth
             .iter()
@@ -1054,29 +1076,35 @@ fn copy_from_x11() {
         );
         connection.send_selection_notify(&request);
         true
-    });
-    let mut found_mimes = Vec::new();
-    for testwl::PasteData { mime_type, data } in data {
-        match &mime_type {
-            x if x == "text/plain" => {
-                assert_eq!(&data, b"hello world");
-            }
-            x if x == "blah/blah" => {
-                assert_eq!(&data, &[1, 2, 3, 4]);
-            }
-            other => panic!("unexpected mime type: {other} ({data:?})"),
-        }
-        found_mimes.push(mime_type);
-    }
+    };
 
-    assert!(
-        found_mimes.contains(&"text/plain".to_string()),
-        "Didn't get mime data for text/plain"
-    );
-    assert!(
-        found_mimes.contains(&"blah/blah".to_string()),
-        "Didn't get mime data for blah/blah"
-    );
+    let clipboard_data = f.testwl.clipboard_paste_data(&mut send_data_for_mime);
+    let primary_data = f.testwl.primary_paste_data(&mut send_data_for_mime);
+
+    for data in [primary_data, clipboard_data] {
+        let mut found_mimes = Vec::new();
+        for testwl::PasteData { mime_type, data } in data {
+            match &mime_type {
+                x if x == "text/plain" => {
+                    assert_eq!(&data, b"hello world");
+                }
+                x if x == "blah/blah" => {
+                    assert_eq!(&data, &[1, 2, 3, 4]);
+                }
+                other => panic!("unexpected mime type: {other} ({data:?})"),
+            }
+            found_mimes.push(mime_type);
+        }
+
+        assert!(
+            found_mimes.contains(&"text/plain".to_string()),
+            "Didn't get mime data for text/plain"
+        );
+        assert!(
+            found_mimes.contains(&"blah/blah".to_string()),
+            "Didn't get mime data for blah/blah"
+        );
+    }
 }
 
 #[test]
@@ -1764,7 +1792,7 @@ fn xdg_decorations() {
     let window = connection.new_window(connection.root, 0, 0, 20, 20, false);
     let surface = f.map_as_toplevel(&mut connection, window);
     let data = f.testwl.get_surface_data(surface).unwrap();
-    // The default decoration mode in x11 is SDD
+    // The default decoration mode in x11 is SSD
     assert_eq!(
         data.toplevel()
             .decoration
@@ -1780,8 +1808,7 @@ fn xdg_decorations() {
         connection.atoms.motif_wm_hints,
         &[2u32, 0, 0, 0, 0],
     );
-    std::thread::sleep(std::time::Duration::from_millis(1));
-    f.testwl.dispatch();
+    f.wait_and_dispatch();
     let data = f.testwl.get_surface_data(surface).unwrap();
     assert_eq!(
         data.toplevel()
@@ -1798,8 +1825,7 @@ fn xdg_decorations() {
         connection.atoms.motif_wm_hints,
         &[2u32, 0, 1, 0, 0],
     );
-    std::thread::sleep(std::time::Duration::from_millis(1));
-    f.testwl.dispatch();
+    f.wait_and_dispatch();
     let data = f.testwl.get_surface_data(surface).unwrap();
     assert_eq!(
         data.toplevel()
@@ -1959,6 +1985,24 @@ fn popup_heuristics() {
         &[connection.atoms.win_type_dnd],
     );
     f.map_as_popup(&mut connection, discord_dnd);
+
+    let git_gui_popup = connection.new_window(connection.root, 10, 10, 50, 50, true);
+    connection.set_property(
+        git_gui_popup,
+        x::ATOM_ATOM,
+        connection.atoms.win_type,
+        &[connection.atoms.win_type_popup_menu],
+    );
+    f.map_as_popup(&mut connection, git_gui_popup);
+
+    let git_gui_dropdown = connection.new_window(connection.root, 10, 10, 50, 50, true);
+    connection.set_property(
+        git_gui_popup,
+        x::ATOM_ATOM,
+        connection.atoms.win_type,
+        &[connection.atoms.win_type_dropdown_menu],
+    );
+    f.map_as_popup(&mut connection, git_gui_dropdown);
 }
 
 #[test]
