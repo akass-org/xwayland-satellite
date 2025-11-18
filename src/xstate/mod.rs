@@ -374,6 +374,7 @@ impl XState {
                         let attrs =
                             unwrap_or_skip_bad_window_cont!(self.connection.wait_for_reply(attrs));
 
+                        debug!("create window from reparent: {geometry:?}");
                         server_state.new_window(
                             e.window(),
                             attrs.override_redirect(),
@@ -531,6 +532,7 @@ impl XState {
                 let prop1 = unsafe { x::Atom::new(data[1]) };
                 let prop2 = unsafe { x::Atom::new(data[2]) };
 
+                debug!("_NET_WM_STATE ({action:?}) props: {data:?}");
                 trace!("_NET_WM_STATE ({action:?}) props: {prop1:?} {prop2:?}");
 
                 for prop in [prop1, prop2] {
@@ -724,6 +726,7 @@ impl XState {
                     self.window_atoms.dropdown_menu,
                     self.window_atoms.tooltip,
                     self.window_atoms.drag_n_drop,
+                    self.window_atoms.kde_override,
                 ]
                 .contains(&x) =>
                 {
@@ -860,6 +863,7 @@ impl XState {
             self.get_property_cookie(window, x::ATOM_WM_NORMAL_HINTS, x::ATOM_WM_SIZE_HINTS, 9);
         let resolver = |reply: x::GetPropertyReply| {
             let data: &[u32] = reply.value();
+            debug!("wm size hints: {data:?}");
             WmNormalHints::from(data)
         };
 
@@ -1024,6 +1028,7 @@ xcb::atoms_struct! {
         dropdown_menu => b"_NET_WM_WINDOW_TYPE_DROPDOWN_MENU" only_if_exists = false,
         utility => b"_NET_WM_WINDOW_TYPE_UTILITY" only_if_exists = false,
         tooltip => b"_NET_WM_WINDOW_TYPE_TOOLTIP" only_if_exists = false,
+        kde_override => b"_KDE_NET_WM_WINDOW_TYPE_OVERRIDE" only_if_exists = false,
     }
 }
 
@@ -1061,12 +1066,15 @@ pub struct WinSize {
 pub struct WmNormalHints {
     pub min_size: Option<WinSize>,
     pub max_size: Option<WinSize>,
+    pub pos: Option<(i32, i32)>,
 }
 
 impl From<&[u32]> for WmNormalHints {
     fn from(value: &[u32]) -> Self {
         let mut ret = Self::default();
         let flags = WmSizeHintsFlags::from_bits_truncate(value[0]);
+
+        ret.pos = Some((value[1] as i32, value[2] as i32));
 
         if flags.contains(WmSizeHintsFlags::ProgramMinSize) {
             ret.min_size = Some(WinSize {

@@ -945,8 +945,14 @@ impl<S: X11Selection + 'static> InnerServerState<S> {
         if dims == win.attrs.dims {
             return;
         }
-        debug!("Reconfiguring {:?} {:?}", event.window(), dims);
-        if !win.mapped {
+        debug!(
+            "Reconfiguring {:?} {:?} {:?} {:?}",
+            event.window(),
+            dims,
+            win.attrs.dims,
+            !win.mapped
+        );
+        if !win.mapped || win.attrs.dims.x == 0 && win.attrs.dims.y == 0 {
             win.attrs.dims = dims;
             return;
         }
@@ -1256,7 +1262,6 @@ impl<S: X11Selection + 'static> InnerServerState<S> {
 
             let (width, height) = (window_data.attrs.dims.width, window_data.attrs.dims.height);
             for (_, dimensions) in self.world.query::<&OutputDimensions>().iter() {
-
                 if dimensions.width == width as i32 && dimensions.height == height as i32 {
                     fullscreen = true;
                     popup_for = None;
@@ -1463,17 +1468,19 @@ impl<S: X11Selection + 'static> InnerServerState<S> {
         let mut x = 0;
         let mut y = 0;
 
-        if window.attrs.dims.x == 0 && window.attrs.dims.y == 0 {
-            if let Some((last_x, last_y)) = self.last_pointer_pos {
-                // x = ((last_x as f64 - parent_dims.x as f64) as f64 / initial_scale) as i32;
-                // y = ((last_y as f64 - parent_dims.y as f64) as f64 / initial_scale) as i32;
-                x = (last_x / initial_scale) as i32;
-                y = (last_y / initial_scale) as i32;
-            }
-        } else {
-            x = ((window.attrs.dims.x - parent_dims.x) as f64 / initial_scale) as i32;
-            y = ((window.attrs.dims.y - parent_dims.y) as f64 / initial_scale) as i32;
-        }
+        // if window.attrs.dims.x == 0 && window.attrs.dims.y == 0 {
+        //     if let Some((last_x, last_y)) = self.last_pointer_pos {
+        //         // x = ((last_x as f64 - parent_dims.x as f64) as f64 / initial_scale) as i32;
+        //         // y = ((last_y as f64 - parent_dims.y as f64) as f64 / initial_scale) as i32;
+        //         x = (last_x / initial_scale) as i32;
+        //         y = (last_y / initial_scale) as i32;
+        //     }
+        // } else {
+        //     x = ((window.attrs.dims.x - parent_dims.x) as f64 / initial_scale) as i32;
+        //     y = ((window.attrs.dims.y - parent_dims.y) as f64 / initial_scale) as i32;
+        // }
+        x = ((window.attrs.dims.x - parent_dims.x) as f64 / initial_scale) as i32;
+        y = ((window.attrs.dims.y - parent_dims.y) as f64 / initial_scale) as i32;
 
         debug!(
             "x y {:?} parent x y {:?} res {:?} {:?} last_pos {:?}",
