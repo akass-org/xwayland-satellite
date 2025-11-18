@@ -730,7 +730,6 @@ impl XState {
                     self.window_atoms.dropdown_menu,
                     self.window_atoms.tooltip,
                     self.window_atoms.drag_n_drop,
-                    self.window_atoms.kde_override,
                 ]
                 .contains(&x) =>
                 {
@@ -748,6 +747,8 @@ impl XState {
         if window_types.contains(&self.window_atoms.kde_override)
             && window_types.contains(&self.window_atoms.utility)
         {
+            let utility = window_types.contains(&self.window_atoms.utility);
+            debug!("set popup to: {is_popup} {window_types:?}");
             is_popup = true;
         }
 
@@ -759,6 +760,7 @@ impl XState {
                     is_popup = !input_hint
                         && !states.contains(&self.atoms.wm_fullscreen)
                         && has_transient_for;
+                    debug!("set popup to: {is_popup} (input_hint: {input_hint})");
                 }
             }
         }
