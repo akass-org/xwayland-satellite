@@ -944,12 +944,14 @@ impl<S: X11Selection + 'static> InnerServerState<S> {
         };
         if dims == win.attrs.dims {
             return;
+        } else {
+            win.attrs.dims = dims;
         }
         debug!("Reconfiguring {:?} {:?}", event.window(), dims);
-        if !win.mapped {
-            win.attrs.dims = dims;
-            return;
-        }
+        // if !win.mapped {
+        //     win.attrs.dims = dims;
+        //     return;
+        // }
 
         if self.xdg_wm_base.version() < 3 {
             return;
@@ -1256,7 +1258,6 @@ impl<S: X11Selection + 'static> InnerServerState<S> {
 
             let (width, height) = (window_data.attrs.dims.width, window_data.attrs.dims.height);
             for (_, dimensions) in self.world.query::<&OutputDimensions>().iter() {
-
                 if dimensions.width == width as i32 && dimensions.height == height as i32 {
                     fullscreen = true;
                     popup_for = None;

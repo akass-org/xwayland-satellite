@@ -713,7 +713,8 @@ impl XState {
         debug!("{window:?} override_redirect: {override_redirect:?}");
 
         let mut known_window_type = false;
-        for ty in window_types {
+        for ty in &window_types {
+            let ty = *ty;
             match ty {
                 x if x == self.window_atoms.normal || x == self.window_atoms.dialog => {
                     is_popup = override_redirect;
@@ -736,6 +737,12 @@ impl XState {
 
             known_window_type = true;
             break;
+        }
+
+        if window_types.contains(&self.window_atoms.kde_override)
+            && window_types.contains(&self.window_atoms.utility)
+        {
+            is_popup = true;
         }
 
         if !known_window_type {
@@ -1024,6 +1031,7 @@ xcb::atoms_struct! {
         dropdown_menu => b"_NET_WM_WINDOW_TYPE_DROPDOWN_MENU" only_if_exists = false,
         utility => b"_NET_WM_WINDOW_TYPE_UTILITY" only_if_exists = false,
         tooltip => b"_NET_WM_WINDOW_TYPE_TOOLTIP" only_if_exists = false,
+        kde_override => b"_KDE_NET_WM_WINDOW_TYPE_OVERRIDE" only_if_exists = false,
     }
 }
 

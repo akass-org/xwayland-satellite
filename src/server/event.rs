@@ -765,7 +765,7 @@ impl Event for client::wl_pointer::Event {
                     if let Some((gx, gy)) = maybe_pos {
                         state.inner.last_pointer_pos = Some((gx, gy));
                     }
-                    
+
                     let surface = state.world.get::<&CurrentSurface>(target).unwrap();
                     if let CurrentSurface::Decoration(parent) = &*surface {
                         decoration::handle_pointer_motion(state, *parent, surface_x, surface_y);
