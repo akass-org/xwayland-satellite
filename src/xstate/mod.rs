@@ -693,7 +693,6 @@ impl XState {
         );
 
         let hints = self.get_wm_hints(window).resolve()?.unwrap_or_default();
-        debug!("wm hints {hints:?}");
 
         let override_redirect = self.connection.wait_for_reply(attrs)?.override_redirect();
         let mut is_popup = override_redirect;
@@ -715,7 +714,6 @@ impl XState {
 
             debug!("{window:?} window_types: {win_types:?}");
         }
-        debug!("{window:?} override_redirect: {override_redirect:?}");
 
         let mut known_window_type = false;
         for ty in &window_types {
@@ -744,24 +742,29 @@ impl XState {
             break;
         }
 
+        let window_state_res = window_state.resolve()?;
+
+        if !known_window_type {
+            if let Some(states) = &window_state_res {
+                is_popup = states.contains(&self.atoms.skip_taskbar);
+            }
+        }
+
+        if let Some(input_hint) = hints.input_hint {
+            if has_transient_for {
+                is_popup = input_hint == false;
+            }
+        }
+
         if window_types.contains(&self.window_atoms.kde_override)
             && window_types.contains(&self.window_atoms.utility)
         {
-            let utility = window_types.contains(&self.window_atoms.utility);
-            debug!("set popup to: {is_popup} {window_types:?}");
             is_popup = true;
         }
 
-        if !known_window_type {
-            if let Some(states) = window_state.resolve()? {
-                is_popup = states.contains(&self.atoms.skip_taskbar);
-
-                if let Some(input_hint) = hints.input_hint {
-                    is_popup = !input_hint
-                        && !states.contains(&self.atoms.wm_fullscreen)
-                        && has_transient_for;
-                    debug!("set popup to: {is_popup} (input_hint: {input_hint})");
-                }
+        if let Some(states) = &window_state_res {
+            if states.contains(&self.atoms.wm_fullscreen) || states.contains(&self.atoms.wm_model) {
+                is_popup = false;
             }
         }
 
@@ -1031,6 +1034,7 @@ xcb::atoms_struct! {
         primary => b"PRIMARY" only_if_exists = false,
         primary_targets => b"_primary_targets" only_if_exists = false,
         moveresize => b"_NET_WM_MOVERESIZE" only_if_exists = false,
+        wm_model => b"_NET_WM_STATE_MODAL" only_if_exists = false,
     }
 }
 
