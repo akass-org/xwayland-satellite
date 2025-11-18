@@ -1258,6 +1258,7 @@ fn window_group_properties() {
         win,
         super::WmHints {
             window_group: Some(prop_win),
+            input_hint: Some(false),
         },
     );
     f.satellite.map_window(win);
@@ -2252,6 +2253,7 @@ fn toplevel_size_limits_scaled() {
                 width: 100,
                 height: 100,
             }),
+            pos: Some((0, 0)),
         },
     );
 
@@ -2281,6 +2283,7 @@ fn toplevel_size_limits_scaled() {
                 width: 200,
                 height: 200,
             }),
+            pos: Some((0, 0)),
         },
     );
     f.run();

@@ -692,6 +692,9 @@ impl XState {
             atoms_vec,
         );
 
+        let hints = self.get_wm_hints(window).resolve()?.unwrap_or_default();
+        debug!("wm hints {hints:?}");
+
         let override_redirect = self.connection.wait_for_reply(attrs)?.override_redirect();
         let mut is_popup = override_redirect;
 
@@ -715,7 +718,8 @@ impl XState {
         debug!("{window:?} override_redirect: {override_redirect:?}");
 
         let mut known_window_type = false;
-        for ty in window_types {
+        for ty in &window_types {
+            let ty = *ty;
             match ty {
                 x if x == self.window_atoms.normal || x == self.window_atoms.dialog => {
                     is_popup = override_redirect;
@@ -741,9 +745,21 @@ impl XState {
             break;
         }
 
+        if window_types.contains(&self.window_atoms.kde_override)
+            && window_types.contains(&self.window_atoms.utility)
+        {
+            is_popup = true;
+        }
+
         if !known_window_type {
             if let Some(states) = window_state.resolve()? {
                 is_popup = states.contains(&self.atoms.skip_taskbar);
+
+                if let Some(input_hint) = hints.input_hint {
+                    is_popup = !input_hint
+                        && !states.contains(&self.atoms.wm_fullscreen)
+                        && has_transient_for;
+                }
             }
         }
 
@@ -1052,6 +1068,7 @@ bitflags! {
 bitflags! {
     /// https://tronche.com/gui/x/icccm/sec-4.html#s-4.1.2.4
     pub struct WmHintsFlags: u32 {
+        const InputHint = 1;
         const WindowGroup = 64;
     }
 }
@@ -1097,6 +1114,7 @@ impl From<&[u32]> for WmNormalHints {
 #[derive(Default, Debug, PartialEq, Eq)]
 pub struct WmHints {
     pub window_group: Option<x::Window>,
+    pub input_hint: Option<bool>,
 }
 
 impl From<&[u32]> for WmHints {
@@ -1107,6 +1125,10 @@ impl From<&[u32]> for WmHints {
         if flags.contains(WmHintsFlags::WindowGroup) {
             let window = unsafe { x::Window::new(value[8]) };
             ret.window_group = Some(window);
+        }
+
+        if flags.contains(WmHintsFlags::InputHint) {
+            ret.input_hint = Some(value[1] == 1);
         }
 
         ret

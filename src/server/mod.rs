@@ -461,8 +461,6 @@ pub struct InnerServerState<S: X11Selection> {
     global_offset_updated: bool,
     updated_outputs: Vec<Entity>,
     new_scale: Option<f64>,
-    /// Last known pointer position in global coordinates (X screen space), if any.
-    last_pointer_pos: Option<(f64, f64)>,
 }
 
 impl<S: X11Selection> ServerState<NoConnection<S>> {
@@ -565,7 +563,6 @@ impl<S: X11Selection> ServerState<NoConnection<S>> {
             global_offset_updated: false,
             updated_outputs: Vec::new(),
             new_scale: None,
-            last_pointer_pos: None,
             decoration_manager,
             world,
         };
@@ -944,18 +941,14 @@ impl<S: X11Selection + 'static> InnerServerState<S> {
         };
         if dims == win.attrs.dims {
             return;
-        }
-        debug!(
-            "Reconfiguring {:?} {:?} {:?} {:?}",
-            event.window(),
-            dims,
-            win.attrs.dims,
-            !win.mapped
-        );
-        if !win.mapped || win.attrs.dims.x == 0 && win.attrs.dims.y == 0 {
+        } else {
             win.attrs.dims = dims;
-            return;
         }
+        // debug!("Reconfiguring {:?} {:?}", event.window(), dims);
+        // if !win.mapped {
+        //     win.attrs.dims = dims;
+        //     return;
+        // }
 
         if self.xdg_wm_base.version() < 3 {
             return;
@@ -1451,41 +1444,15 @@ impl<S: X11Selection + 'static> InnerServerState<S> {
         let initial_scale = parent_scale.0;
         *scale = *parent_scale;
 
-        debug!(
-            "creating popup ({:?}) {:?} {:?} {:?} {entity:?} (scale: {initial_scale})",
-            *self.world.get::<&x::Window>(entity).unwrap(),
-            parent,
-            window.attrs.dims,
-            xdg.id()
-        );
-
         let positioner = self.xdg_wm_base.create_positioner(&self.qh, ());
         positioner.set_size(
             1.max((window.attrs.dims.width as f64 / initial_scale) as i32),
             1.max((window.attrs.dims.height as f64 / initial_scale) as i32),
         );
 
-        let mut x = 0;
-        let mut y = 0;
+        let x = ((window.attrs.dims.x - parent_dims.x) as f64 / initial_scale) as i32;
+        let y = ((window.attrs.dims.y - parent_dims.y) as f64 / initial_scale) as i32;
 
-        // if window.attrs.dims.x == 0 && window.attrs.dims.y == 0 {
-        //     if let Some((last_x, last_y)) = self.last_pointer_pos {
-        //         // x = ((last_x as f64 - parent_dims.x as f64) as f64 / initial_scale) as i32;
-        //         // y = ((last_y as f64 - parent_dims.y as f64) as f64 / initial_scale) as i32;
-        //         x = (last_x / initial_scale) as i32;
-        //         y = (last_y / initial_scale) as i32;
-        //     }
-        // } else {
-        //     x = ((window.attrs.dims.x - parent_dims.x) as f64 / initial_scale) as i32;
-        //     y = ((window.attrs.dims.y - parent_dims.y) as f64 / initial_scale) as i32;
-        // }
-        x = ((window.attrs.dims.x - parent_dims.x) as f64 / initial_scale) as i32;
-        y = ((window.attrs.dims.y - parent_dims.y) as f64 / initial_scale) as i32;
-
-        debug!(
-            "x y {:?} parent x y {:?} res {:?} {:?} last_pos {:?}",
-            window.attrs.dims, parent_dims, x, y, self.last_pointer_pos
-        );
         positioner.set_offset(x, y);
         positioner.set_anchor(Anchor::TopLeft);
         positioner.set_gravity(Gravity::BottomRight);

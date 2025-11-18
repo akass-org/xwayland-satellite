@@ -740,32 +740,6 @@ impl Event for client::wl_pointer::Event {
                     return;
                 }
                 {
-                    let mut maybe_pos: Option<(f64, f64)> = None;
-                    let mut saved_scale = None;
-                    {
-                        let (server, scale) = state
-                            .world
-                            .query_one_mut::<(&WlPointer, &SurfaceScaleFactor)>(target)
-                            .unwrap();
-                        trace!(
-                            target: "pointer_position",
-                            "pointer motion {} {}",
-                            surface_x * scale.0,
-                            surface_y * scale.0
-                        );
-                        server.motion(time, surface_x * scale.0, surface_y * scale.0);
-                        // copy the scale out so we can use it after the mutable borrow ends
-                        saved_scale = Some(scale.0);
-                    }
-
-                    if let Some(scale_val) = saved_scale {
-                        maybe_pos = Some((surface_x * scale_val, surface_y * scale_val));
-                    }
-
-                    if let Some((gx, gy)) = maybe_pos {
-                        state.inner.last_pointer_pos = Some((gx, gy));
-                    }
-                    
                     let surface = state.world.get::<&CurrentSurface>(target).unwrap();
                     if let CurrentSurface::Decoration(parent) = &*surface {
                         decoration::handle_pointer_motion(state, *parent, surface_x, surface_y);
