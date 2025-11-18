@@ -697,6 +697,12 @@ impl XState {
         let override_redirect = self.connection.wait_for_reply(attrs)?.override_redirect();
         let mut is_popup = override_redirect;
 
+        if let Some(input_hint) = hints.input_hint {
+            if has_transient_for {
+                is_popup = input_hint == false;
+            }
+        }
+
         let window_types = window_types.resolve()?.unwrap_or_else(|| {
             if !override_redirect && has_transient_for {
                 vec![self.window_atoms.dialog]
@@ -747,12 +753,6 @@ impl XState {
         if !known_window_type {
             if let Some(states) = &window_state_res {
                 is_popup = states.contains(&self.atoms.skip_taskbar);
-            }
-        }
-
-        if let Some(input_hint) = hints.input_hint {
-            if has_transient_for {
-                is_popup = input_hint == false;
             }
         }
 
