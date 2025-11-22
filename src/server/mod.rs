@@ -460,7 +460,7 @@ pub struct InnerServerState<S: X11Selection> {
     global_output_offset: GlobalOutputOffset,
     global_offset_updated: bool,
     updated_outputs: Vec<Entity>,
-    new_scale: Option<f64>,
+    new_scale: f64,
 }
 
 impl<S: X11Selection> ServerState<NoConnection<S>> {
@@ -562,7 +562,7 @@ impl<S: X11Selection> ServerState<NoConnection<S>> {
             },
             global_offset_updated: false,
             updated_outputs: Vec::new(),
-            new_scale: None,
+            new_scale: 1.,
             decoration_manager,
             world,
         };
@@ -673,7 +673,7 @@ impl<C: XConnection> ServerState<C> {
             for (_, output_scale) in outputs {
                 if output_scale.get() != scale {
                     mixed_scale = true;
-                    scale = scale.min(output_scale.get());
+                    scale = scale.max(output_scale.get());
                 }
             }
 
@@ -682,7 +682,7 @@ impl<C: XConnection> ServerState<C> {
             }
 
             debug!("Using new scale {scale}");
-            self.new_scale = Some(scale);
+            self.new_scale = scale;
         }
 
         {
@@ -932,6 +932,8 @@ impl<S: X11Selection + 'static> InnerServerState<S> {
             debug!("not reconfiguring unknown window {:?}", event.window());
             return;
         };
+
+        debug!("origin dims {:?}", win.attrs.dims);
 
         let dims = WindowDims {
             x: event.x(),
@@ -1194,8 +1196,8 @@ impl<S: X11Selection + 'static> InnerServerState<S> {
         }
     }
 
-    pub fn new_global_scale(&mut self) -> Option<f64> {
-        self.new_scale.take()
+    pub fn new_global_scale(&mut self) -> f64 {
+        self.new_scale
     }
 
     fn handle_activations(&mut self) {
@@ -1263,8 +1265,6 @@ impl<S: X11Selection + 'static> InnerServerState<S> {
             }
 
             let win = *self.world.get::<&x::Window>(entity).unwrap();
-
-            set_def_size(win.resource_id(), 0, 0);
         }
 
         let (role, is_toplevel) = if let Some(parent) = popup_for {
@@ -1307,13 +1307,28 @@ impl<S: X11Selection + 'static> InnerServerState<S> {
             *self.world.get::<&x::Window>(entity).unwrap()
         );
 
+        let mut query = self.world.query_one::<&SurfaceScaleFactor>(entity).unwrap();
+        let scale_factor = query.get().unwrap();
+
+        let scale_factor = self.new_scale;
+
+        drop(query);
+
+        debug!("create toplevel with scale factor: {}", scale_factor);
+
         let toplevel = xdg.get_toplevel(&self.qh, entity);
         if let Some(hints) = &window.attrs.size_hints {
             if let Some(min) = &hints.min_size {
-                toplevel.set_min_size(min.width, min.height);
+                toplevel.set_min_size(
+                    (min.width as f64 / scale_factor) as i32,
+                    (min.height as f64 / scale_factor) as i32,
+                );
             }
             if let Some(max) = &hints.max_size {
-                toplevel.set_max_size(max.width, max.height);
+                toplevel.set_max_size(
+                    (max.width as f64 / scale_factor) as i32,
+                    (max.height as f64 / scale_factor) as i32,
+                );
             }
         }
 
@@ -1443,6 +1458,7 @@ impl<S: X11Selection + 'static> InnerServerState<S> {
         let parent_dims = parent_window.attrs.dims;
         let initial_scale = parent_scale.0;
         *scale = *parent_scale;
+        debug!("create popup with scale factor: {}", initial_scale);
 
         let positioner = self.xdg_wm_base.create_positioner(&self.qh, ());
         positioner.set_size(

@@ -48,26 +48,6 @@ use wayland_server::protocol::{
     wl_seat::WlSeat, wl_touch::WlTouch,
 };
 
-use std::sync::LazyLock;
-use xcb::Xid;
-
-static DEF_SIZE: LazyLock<std::sync::Mutex<HashMap<u32, (u16, u16)>>> =
-    LazyLock::new(|| std::sync::Mutex::new(HashMap::new()));
-
-pub fn set_def_size(id: u32, x: u16, y: u16) -> (u16, u16) {
-    let mut map = DEF_SIZE.lock().unwrap();
-    // map.entry(id).or_insert(def);
-    map.insert(id, (x, y));
-    let val = *map.get(&id).unwrap();
-    val
-}
-
-pub fn get_def_size(id: u32) -> (u16, u16) {
-    let map = DEF_SIZE.lock().unwrap();
-    let val = *map.get(&id).unwrap();
-    val
-}
-
 #[derive(Copy, Clone)]
 pub(super) struct SurfaceScaleFactor(pub f64);
 
@@ -106,6 +86,20 @@ impl_from!(zxdg_toplevel_decoration_v1::Event, DecorationEvent);
 
 impl Event for SurfaceEvents {
     fn handle<C: XConnection>(self, target: Entity, state: &mut ServerState<C>) {
+        let scale_factors = state
+            .world
+            .query::<&OutputScaleFactor>()
+            .iter()
+            .map(|(_, scale_factor)| scale_factor.get())
+            .collect::<Vec<_>>();
+
+        let mut scale_factor = 1.0;
+        for scale in scale_factors {
+            if scale > scale_factor {
+                scale_factor = scale;
+            }
+        }
+
         match self {
             SurfaceEvents::WlSurface(event) => Self::surface_event(event, target, state),
             SurfaceEvents::XdgSurface(event) => Self::xdg_event(event, target, state),
@@ -115,7 +109,9 @@ impl Event for SurfaceEvents {
                 wp_fractional_scale_v1::Event::PreferredScale { scale } => {
                     let state = state.deref_mut();
                     let entity = state.world.entity(target).unwrap();
-                    let factor = scale as f64 / 120.0;
+                    // let origin_factor = scale as f64 / 120.0;
+                    let factor = scale_factor;
+
                     debug!(
                         "{} scale factor: {}",
                         entity.get::<&WlSurface>().unwrap().id(),
@@ -342,6 +338,11 @@ impl SurfaceEvents {
                 data.get::<&WlSurface>().unwrap().id(),
             );
 
+            debug!(
+                "pending: {pending:?} scale:{:?} output_offset:{:?}",
+                scale_factor.0, window_data.output_offset
+            );
+
             if let SurfaceRole::Toplevel(Some(toplevel)) = &mut *role {
                 if let Some(d) = &mut toplevel.decoration.satellite {
                     let surface_width = (width as f64 / scale_factor.0) as i32;
@@ -466,6 +467,7 @@ impl SurfaceEvents {
                     "popup configure {}: {x}x{y}, {width}x{height}",
                     data.get::<&WlSurface>().unwrap().id()
                 );
+
                 data.get::<&mut SurfaceRole>()
                     .unwrap()
                     .xdg_mut()
@@ -477,7 +479,9 @@ impl SurfaceEvents {
                     height,
                 });
             }
-            xdg_popup::Event::Repositioned { .. } => {}
+            xdg_popup::Event::Repositioned { .. } => {
+                debug!("popup repositioned");
+            }
             xdg_popup::Event::PopupDone => {
                 state
                     .connection
@@ -1227,6 +1231,20 @@ impl OutputEvent {
         target: Entity,
         state: &mut ServerState<C>,
     ) {
+        let scale_factors = state
+            .world
+            .query::<&OutputScaleFactor>()
+            .iter()
+            .map(|(_, scale_factor)| scale_factor.get())
+            .collect::<Vec<_>>();
+
+        let mut scale_factor = 1.0;
+        for scale in scale_factors {
+            if scale > scale_factor {
+                scale_factor = scale;
+            }
+        }
+
         use client::wl_output::Event;
         match event {
             Event::Geometry {
@@ -1283,9 +1301,15 @@ impl OutputEvent {
                 });
                 if let Some(xdg) = xdg {
                     if dimensions.rotated_90 {
-                        xdg.logical_size(dimensions.height, dimensions.width);
+                        xdg.logical_size(
+                            (dimensions.height as f64 * scale_factor) as i32,
+                            (dimensions.width as f64 * scale_factor) as i32,
+                        );
                     } else {
-                        xdg.logical_size(dimensions.width, dimensions.height);
+                        xdg.logical_size(
+                            (dimensions.width as f64 * scale_factor) as i32,
+                            (dimensions.height as f64 * scale_factor) as i32,
+                        );
                     }
                 }
             }
@@ -1311,6 +1335,7 @@ impl OutputEvent {
                 output.mode(convert_wenum(flags), width, height, refresh);
             }
             Event::Scale { factor } => {
+                // let factor = 2;
                 debug!(
                     "{} scale: {factor}",
                     state.world.get::<&WlOutput>(target).unwrap().id()
@@ -1350,6 +1375,20 @@ impl OutputEvent {
     ) {
         use zxdg_output_v1::Event;
 
+        let scale_factors = state
+            .world
+            .query::<&OutputScaleFactor>()
+            .iter()
+            .map(|(_, scale_factor)| scale_factor.get())
+            .collect::<Vec<_>>();
+
+        let mut scale_factor = 1.0;
+        for scale in scale_factors {
+            if scale > scale_factor {
+                scale_factor = scale;
+            }
+        }
+
         match event {
             Event::LogicalPosition { x, y } => {
                 update_output_offset(target, OutputDimensionsSource::Xdg, x, y, state);
@@ -1368,9 +1407,15 @@ impl OutputEvent {
                     .query_one_mut::<(&XdgOutputServer, &OutputDimensions)>(target)
                     .unwrap();
                 if dimensions.rotated_90 {
-                    xdg.logical_size(dimensions.height, dimensions.width);
+                    xdg.logical_size(
+                        (dimensions.height as f64 * scale_factor) as i32,
+                        (dimensions.width as f64 * scale_factor) as i32,
+                    );
                 } else {
-                    xdg.logical_size(dimensions.width, dimensions.height);
+                    xdg.logical_size(
+                        (dimensions.width as f64 * scale_factor) as i32,
+                        (dimensions.height as f64 * scale_factor) as i32,
+                    );
                 }
             }
             _ => simple_event_shunt! {
