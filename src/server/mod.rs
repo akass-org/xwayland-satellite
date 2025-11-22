@@ -1307,13 +1307,7 @@ impl<S: X11Selection + 'static> InnerServerState<S> {
             *self.world.get::<&x::Window>(entity).unwrap()
         );
 
-        let mut query = self.world.query_one::<&SurfaceScaleFactor>(entity).unwrap();
-        let scale_factor = query.get().unwrap();
-
         let scale_factor = self.new_scale;
-
-        drop(query);
-
         debug!("create toplevel with scale factor: {}", scale_factor);
 
         let toplevel = xdg.get_toplevel(&self.qh, entity);
