@@ -1273,11 +1273,14 @@ impl OutputEvent {
                 );
                 let global_output_offset = state.global_output_offset;
 
-                let (output, dimensions, xdg) = state
+                let (output, dimensions, xdg, scale) = state
                     .world
-                    .query_one_mut::<(&WlOutput, &mut OutputDimensions, Option<&XdgOutputServer>)>(
-                        target,
-                    )
+                    .query_one_mut::<(
+                        &WlOutput,
+                        &mut OutputDimensions,
+                        Option<&XdgOutputServer>,
+                        &OutputScaleFactor,
+                    )>(target)
                     .unwrap();
 
                 output.geometry(
@@ -1302,13 +1305,13 @@ impl OutputEvent {
                 if let Some(xdg) = xdg {
                     if dimensions.rotated_90 {
                         xdg.logical_size(
-                            (dimensions.height as f64 * scale_factor) as i32,
-                            (dimensions.width as f64 * scale_factor) as i32,
+                            (dimensions.height as f64 * scale_factor / scale.get()) as i32,
+                            (dimensions.width as f64 * scale_factor / scale.get()) as i32,
                         );
                     } else {
                         xdg.logical_size(
-                            (dimensions.width as f64 * scale_factor) as i32,
-                            (dimensions.height as f64 * scale_factor) as i32,
+                            (dimensions.width as f64 * scale_factor / scale.get()) as i32,
+                            (dimensions.height as f64 * scale_factor / scale.get()) as i32,
                         );
                     }
                 }
@@ -1402,19 +1405,21 @@ impl OutputEvent {
                     );
             }
             Event::LogicalSize { .. } => {
-                let (xdg, dimensions) = state
+                let (xdg, dimensions, scale) = state
                     .world
-                    .query_one_mut::<(&XdgOutputServer, &OutputDimensions)>(target)
+                    .query_one_mut::<(&XdgOutputServer, &OutputDimensions, &OutputScaleFactor)>(
+                        target,
+                    )
                     .unwrap();
                 if dimensions.rotated_90 {
                     xdg.logical_size(
-                        (dimensions.height as f64 * scale_factor) as i32,
-                        (dimensions.width as f64 * scale_factor) as i32,
+                        (dimensions.height as f64 * scale_factor / scale.get()) as i32,
+                        (dimensions.width as f64 * scale_factor / scale.get()) as i32,
                     );
                 } else {
                     xdg.logical_size(
-                        (dimensions.width as f64 * scale_factor) as i32,
-                        (dimensions.height as f64 * scale_factor) as i32,
+                        (dimensions.width as f64 * scale_factor / scale.get()) as i32,
+                        (dimensions.height as f64 * scale_factor / scale.get()) as i32,
                     );
                 }
             }

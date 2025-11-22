@@ -1263,8 +1263,6 @@ impl<S: X11Selection + 'static> InnerServerState<S> {
                     break;
                 }
             }
-
-            let win = *self.world.get::<&x::Window>(entity).unwrap();
         }
 
         let (role, is_toplevel) = if let Some(parent) = popup_for {
