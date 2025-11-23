@@ -59,10 +59,13 @@ pub const fn timespec_from_millis(millis: u64) -> Timespec {
 }
 
 pub fn main(mut data: impl RunData) -> Option<()> {
-    let mut version = env!("VERGEN_GIT_DESCRIBE");
+    let mut version = env!("VERGEN_GIT_SHA");
     if version == "VERGEN_IDEMPOTENT_OUTPUT" {
         version = env!("CARGO_PKG_VERSION");
     }
+
+    let version = format!("v{}-{}-dirty", env!("CARGO_PKG_VERSION"), version,);
+
     info!("Starting xwayland-satellite version {version}");
 
     let socket = ListeningSocket::bind_auto("xwls", 1..=128).unwrap();
