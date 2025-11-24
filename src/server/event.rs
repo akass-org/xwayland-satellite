@@ -86,19 +86,7 @@ impl_from!(zxdg_toplevel_decoration_v1::Event, DecorationEvent);
 
 impl Event for SurfaceEvents {
     fn handle<C: XConnection>(self, target: Entity, state: &mut ServerState<C>) {
-        let scale_factors = state
-            .world
-            .query::<&OutputScaleFactor>()
-            .iter()
-            .map(|(_, scale_factor)| scale_factor.get())
-            .collect::<Vec<_>>();
-
-        let mut scale_factor = 1.0;
-        for scale in scale_factors {
-            if scale > scale_factor {
-                scale_factor = scale;
-            }
-        }
+        let scale_factor = state.new_global_scale();
 
         match self {
             SurfaceEvents::WlSurface(event) => Self::surface_event(event, target, state),
@@ -109,7 +97,6 @@ impl Event for SurfaceEvents {
                 wp_fractional_scale_v1::Event::PreferredScale { scale } => {
                     let state = state.deref_mut();
                     let entity = state.world.entity(target).unwrap();
-                    // let origin_factor = scale as f64 / 120.0;
                     let factor = scale_factor;
 
                     debug!(
@@ -128,6 +115,7 @@ impl Event for SurfaceEvents {
                             state.updated_outputs.push(output);
                         }
                     }
+
                     if entity.has::<WindowData>() {
                         update_surface_viewport(state.world.query_one(target).unwrap());
                     }

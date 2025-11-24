@@ -236,7 +236,8 @@ pub fn main(mut data: impl RunData) -> Option<()> {
             xstate.set_primary_selection(sel);
         }
 
-        let scale = server_state.new_global_scale();
+        let scale = xstate.get_xwayland_global_output_scale();
+        server_state.set_global_scale(scale);
         xstate.update_global_scale(scale);
 
         match poll(&mut fds, None) {

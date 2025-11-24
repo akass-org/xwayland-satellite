@@ -565,7 +565,7 @@ impl<S: X11Selection> ServerState<NoConnection<S>> {
             new_scale: 1.,
             decoration_manager,
             world,
-        };
+                    };
         Self {
             inner,
             connection: NoConnection {
@@ -638,8 +638,29 @@ impl<C: XConnection> ServerState<C> {
         }
 
         if !self.updated_outputs.is_empty() {
+            // let mut mixed_scale = false;
+            // let mut scale = 1.;
+            // let mut logical_scale = 1.;
+            // let mut max = 1.;
+
             for output in self.updated_outputs.iter() {
                 let output_scale = self.world.get::<&OutputScaleFactor>(*output).unwrap();
+                // max = output_scale.get().max(max);
+
+                // let mut surface_query = self
+                //     .world
+                //     .query::<(&OnOutput, &mut SurfaceScaleFactor)>()
+                //     .with::<(&WindowData, &WlSurface)>();
+
+                // println!("break point 1 {}",output_scale.get());
+
+                // for (_, (OnOutput(s_output), _)) in surface_query.iter() {
+                //     if s_output == output {
+                //         max = output_scale.get().max(max);
+                //         debug!("output {output:?} for scale {:?}", max);
+                //     }
+                // }
+
                 if matches!(*output_scale, OutputScaleFactor::Output(..)) {
                     let mut surface_query = self
                         .world
@@ -661,28 +682,6 @@ impl<C: XConnection> ServerState<C> {
                 }
             }
             self.updated_outputs.clear();
-
-            let mut mixed_scale = false;
-            let mut scale;
-
-            let mut outputs = self.world.query_mut::<&OutputScaleFactor>().into_iter();
-            let (_, output_scale) = outputs.next().unwrap();
-
-            scale = output_scale.get();
-
-            for (_, output_scale) in outputs {
-                if output_scale.get() != scale {
-                    mixed_scale = true;
-                    scale = scale.max(output_scale.get());
-                }
-            }
-
-            if mixed_scale {
-                warn!("Mixed output scales detected, choosing to give apps the smallest detected scale ({scale}x)");
-            }
-
-            debug!("Using new scale {scale}");
-            self.new_scale = scale;
         }
 
         {
@@ -946,7 +945,7 @@ impl<S: X11Selection + 'static> InnerServerState<S> {
         } else {
             win.attrs.dims = dims;
         }
-        // debug!("Reconfiguring {:?} {:?}", event.window(), dims);
+        debug!("Reconfiguring {:?} {:?}", event.window(), dims);
         if !win.mapped {
             // win.attrs.dims = dims;
             return;
@@ -1198,6 +1197,10 @@ impl<S: X11Selection + 'static> InnerServerState<S> {
 
     pub fn new_global_scale(&mut self) -> f64 {
         self.new_scale
+    }
+
+    pub fn set_global_scale(&mut self, scale: f64) {
+        self.new_scale = scale;
     }
 
     fn handle_activations(&mut self) {

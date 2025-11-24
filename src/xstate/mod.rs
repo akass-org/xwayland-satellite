@@ -917,6 +917,36 @@ impl XState {
         }
     }
 
+    pub fn get_xwayland_global_output_scale(&self) -> f64 {
+        // debug!("get_xwayland_global_output_scale");
+        let cookie = self.get_property_cookie(
+            self.root,
+            self.atoms.xwayland_global_output_scale,
+            x::ATOM_ANY,
+            1,
+        );
+        let resolver = |reply: x::GetPropertyReply| {
+            let data: &[u32] = reply.value();
+            // debug!("get_xwayland_global_output_scale_data: {:?}", data[0]);
+            data[0]
+        };
+
+        let wrapper = PropertyCookieWrapper {
+            connection: &self.connection,
+            cookie,
+            resolver,
+        };
+
+        match wrapper.resolve() {
+            Ok(Some(scale)) => scale as f64 / 1000.,
+            Ok(None) => 1.,
+            Err(_) => {
+                warn!("Failed to get xwayland global output scale");
+                1.
+            }
+        }
+    }
+
     fn get_pid(&self, window: x::Window) -> Option<u32> {
         let Some(pid) = self
             .connection
@@ -1035,6 +1065,7 @@ xcb::atoms_struct! {
         primary_targets => b"_primary_targets" only_if_exists = false,
         moveresize => b"_NET_WM_MOVERESIZE" only_if_exists = false,
         wm_model => b"_NET_WM_STATE_MODAL" only_if_exists = false,
+        xwayland_global_output_scale => b"_XWAYLAND_GLOBAL_OUTPUT_SCALE" only_if_exists = false,
     }
 }
 
