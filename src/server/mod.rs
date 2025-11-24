@@ -1203,6 +1203,15 @@ impl<S: X11Selection + 'static> InnerServerState<S> {
         self.new_scale = scale;
     }
 
+    pub fn get_max_output_scale(&self) -> f64 {
+        self.world
+            .world
+            .query::<&OutputScaleFactor>()
+            .iter()
+            .map(|(_, scale_factor)| scale_factor.get())
+            .fold(1.0, f64::max)
+    }
+
     fn handle_activations(&mut self) {
         let Some(activation_state) = self.activation_state.as_ref() else {
             return;

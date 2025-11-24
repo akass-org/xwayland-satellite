@@ -97,7 +97,7 @@ impl Event for SurfaceEvents {
                 wp_fractional_scale_v1::Event::PreferredScale { scale } => {
                     let state = state.deref_mut();
                     let entity = state.world.entity(target).unwrap();
-                    let factor = scale_factor;
+                    let factor = scale as f64 / 120.;
 
                     debug!(
                         "{} scale factor: {}",

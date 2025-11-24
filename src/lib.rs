@@ -236,9 +236,23 @@ pub fn main(mut data: impl RunData) -> Option<()> {
             xstate.set_primary_selection(sel);
         }
 
-        let scale = xstate.get_xwayland_global_output_scale();
-        server_state.set_global_scale(scale);
-        xstate.update_global_scale(scale);
+        // 从 Wayland 获取缩放
+        let wayland_scale = server_state.get_max_output_scale();
+
+        // 如果 Wayland 有非默认缩放（说明已收到输出事件），则使用它
+        if wayland_scale > 1.0 {
+            // 只在缩放变化时才写入，避免频繁更新
+            if (wayland_scale - server_state.new_global_scale()).abs() > 0.001 {
+                xstate.set_xwayland_global_output_scale(wayland_scale);
+                server_state.set_global_scale(wayland_scale);
+                xstate.update_global_scale(wayland_scale);
+            }
+        } else {
+            // 否则从 X11 读取（向后兼容手动设置，或等待 Wayland 事件）
+            let scale = xstate.get_xwayland_global_output_scale();
+            server_state.set_global_scale(scale);
+            xstate.update_global_scale(scale);
+        }
 
         match poll(&mut fds, None) {
             Ok(_) => {

@@ -295,6 +295,11 @@ impl XState {
         self.set_root_property(self.atoms.wm_check, x::ATOM_WINDOW, &[self.wm_window]);
         self.set_root_property(self.atoms.active_win, x::ATOM_WINDOW, &[x::Window::none()]);
         self.set_root_property(
+            self.atoms.xwayland_global_output_scale,
+            x::ATOM_CARDINAL,
+            &[1000u32],
+        );
+        self.set_root_property(
             self.atoms.supported,
             x::ATOM_ATOM,
             &[
@@ -945,6 +950,22 @@ impl XState {
                 1.
             }
         }
+    }
+
+    pub fn set_xwayland_global_output_scale(&self, scale: f64) {
+        let scale_value = (scale * 1000.) as u32;
+
+        self.connection
+            .send_and_check_request(&x::ChangeProperty {
+                mode: x::PropMode::Replace,
+                window: self.root,
+                property: self.atoms.xwayland_global_output_scale,
+                r#type: x::ATOM_CARDINAL,
+                data: &[scale_value],
+            })
+            .unwrap();
+
+        debug!("Set _XWAYLAND_GLOBAL_OUTPUT_SCALE to {}", scale_value);
     }
 
     fn get_pid(&self, window: x::Window) -> Option<u32> {
