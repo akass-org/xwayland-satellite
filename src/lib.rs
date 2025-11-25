@@ -1,5 +1,6 @@
 mod server;
 pub mod xstate;
+pub mod config_reader;
 
 use crate::server::{NoConnection, PendingSurfaceState, ServerState};
 use crate::xstate::{RealConnection, XState};
@@ -13,6 +14,9 @@ use std::os::unix::net::UnixStream;
 use std::process::{Command, ExitStatus, Stdio};
 use wayland_server::{Display, ListeningSocket};
 use xcb::x;
+use std::env;
+use config_reader::Config;
+use std::path::Path;
 
 pub trait XConnection: Sized + 'static {
     type X11Selection: X11Selection;
@@ -221,6 +225,16 @@ pub fn main(mut data: impl RunData) -> Option<()> {
     #[cfg(not(feature = "systemd"))]
     info!("Systemd support disabled.");
 
+    let mut is_niri_config = false;
+    let home = env::var("HOME").expect("HOME env not set");
+    let niri_config_path = format!("{}/.config/niri/config.kdl", home);
+
+    let mut config_reader = Config::new();
+
+    if Path::new(&niri_config_path).exists() {
+        is_niri_config = true;
+    }
+
     loop {
         xstate.handle_events(&mut server_state);
 
@@ -236,7 +250,10 @@ pub fn main(mut data: impl RunData) -> Option<()> {
             xstate.set_primary_selection(sel);
         }
 
-        let scale = xstate.get_xwayland_global_output_scale();
+        let mut scale = xstate.get_xwayland_global_output_scale();
+        if is_niri_config {
+            scale = config_reader.get_scale() as f64;
+        }
         server_state.set_global_scale(scale);
         xstate.update_global_scale(scale);
 

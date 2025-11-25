@@ -1321,6 +1321,7 @@ dependencies = [
  "macros",
  "num_enum",
  "pretty_env_logger",
+ "regex",
  "rustix",
  "sd-notify",
  "smithay-client-toolkit",
