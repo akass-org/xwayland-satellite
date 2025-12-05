@@ -126,6 +126,7 @@ impl Event for SurfaceEvents {
                 _ => unreachable!(),
             },
             SurfaceEvents::DecorationEvent(event) => {
+                // debug!("decoration event: {event:?}");
                 use zxdg_toplevel_decoration_v1::{Event, Mode};
                 let Event::Configure { mode } = event else {
                     error!("unhandled toplevel decoration event: {event:?}");
@@ -157,6 +158,7 @@ impl Event for SurfaceEvents {
                 let Some((sat_decoration, buf)) = entity
                     .get::<&client::wl_surface::WlSurface>()
                     .and_then(|surface| {
+                        debug!("Creating decorations for window");
                         DecorationsDataSatellite::try_new(
                             state,
                             &surface,
@@ -167,6 +169,12 @@ impl Event for SurfaceEvents {
                     warn!("Needed to create decorations for window, but couldn't create them!");
                     return;
                 };
+
+                debug!(
+                    "sat_decoration: {:?}, buf: {:?}",
+                    sat_decoration,
+                    buf.is_some()
+                );
 
                 let mut role = entity.get::<&mut SurfaceRole>().unwrap();
                 // This should always be the case, but, you never know.
@@ -505,10 +513,13 @@ pub(super) fn update_surface_viewport(
         Some(SurfaceRole::Toplevel(Some(data))) => Some(data),
         _ => None,
     };
+
+    debug!("top level data: {:?}", toplevel_data);
     if let Some(d) = toplevel_data
         .as_mut()
         .and_then(|d| d.decoration.satellite.as_deref_mut())
     {
+        debug!("draw decorations for {}", surface.id());
         d.draw_decorations(world, width, scale_factor.0 as f32);
     }
     debug!("{} viewport: {width}x{height}", surface.id());

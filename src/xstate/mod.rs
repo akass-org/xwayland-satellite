@@ -417,6 +417,7 @@ impl XState {
                     server_state.map_window(e.window());
                 }
                 xcb::Event::X(x::Event::ConfigureNotify(e)) => {
+                    // debug!("configure event: {e:?}");
                     server_state.reconfigure_window(e);
                 }
                 xcb::Event::X(x::Event::UnmapNotify(e)) => {
@@ -458,10 +459,20 @@ impl XState {
                     self.handle_property_change(e, server_state);
                 }
                 xcb::Event::X(x::Event::ConfigureRequest(e)) => {
-                    debug!("{:?} request: {:?}", e.window(), e.value_mask());
+                    debug!(
+                        "{:?} request: {:?} data {:?} {:?}",
+                        e.window(),
+                        e.value_mask(),
+                        e.stack_mode(),
+                        e
+                    );
 
                     let mut list = Vec::new();
                     let mask = e.value_mask();
+
+                    if mask.contains(x::ConfigWindowMask::STACK_MODE) {
+                        list.push(x::ConfigWindow::StackMode(e.stack_mode()));
+                    }
 
                     if server_state.can_change_position(e.window()) {
                         if mask.contains(x::ConfigWindowMask::X) {
@@ -486,6 +497,7 @@ impl XState {
                     ));
                 }
                 xcb::Event::X(x::Event::ClientMessage(e)) => {
+                    debug!("client message: {e:?}");
                     self.handle_client_message(e, server_state);
                 }
                 xcb::Event::X(x::Event::MappingNotify(_)) => {}
@@ -625,6 +637,7 @@ impl XState {
 
         let motif_hints = motif_wm_hints.resolve()?;
         if let Some(decorations) = motif_hints.as_ref().and_then(|m| m.decorations) {
+            debug!("motif hints exist");
             server_state.set_win_decorations(window, decorations);
         }
 
@@ -983,6 +996,19 @@ impl XState {
 
         let window = event.window();
 
+        debug!(
+            "handle property change for window: {window:?} {:?}",
+            event.atom()
+        );
+
+        let motif_hints =
+            unwrap_or_skip_bad_window_ret!(self.get_motif_wm_hints(window).resolve()).unwrap();
+        debug!("motif_hints_ {:?}", motif_hints.decorations);
+        if let Some(decorations) = motif_hints.decorations {
+            debug!("motif_hints_exist");
+            server_state.set_win_decorations(window, decorations);
+        }
+
         match event.atom() {
             x if x == x::ATOM_WM_HINTS => {
                 let hints =
@@ -1014,7 +1040,9 @@ impl XState {
                 let motif_hints =
                     unwrap_or_skip_bad_window_ret!(self.get_motif_wm_hints(window).resolve())
                         .unwrap();
+                debug!("motif_hints_ {:?}", motif_hints.decorations);
                 if let Some(decorations) = motif_hints.decorations {
+                    debug!("motif_hints_exist");
                     server_state.set_win_decorations(window, decorations);
                 }
             }

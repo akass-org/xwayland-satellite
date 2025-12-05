@@ -565,7 +565,7 @@ impl<S: X11Selection> ServerState<NoConnection<S>> {
             new_scale: 1.,
             decoration_manager,
             world,
-                    };
+        };
         Self {
             inner,
             connection: NoConnection {
@@ -945,12 +945,12 @@ impl<S: X11Selection + 'static> InnerServerState<S> {
         };
         if dims == win.attrs.dims {
             return;
-        } else {
+        } else if win.attrs.is_popup {
             win.attrs.dims = dims;
         }
         debug!("Reconfiguring {:?} {:?}", event.window(), dims);
         if !win.mapped {
-            // win.attrs.dims = dims;
+            win.attrs.dims = dims;
             return;
         }
 
@@ -1251,8 +1251,8 @@ impl<S: X11Selection + 'static> InnerServerState<S> {
         {
             let data = self.world.entity(entity).unwrap();
             let surface = data.get::<&client::wl_surface::WlSurface>().unwrap();
-            surface.attach(None, 0, 0);
-            surface.commit();
+            // surface.attach(None, 0, 0);
+            // surface.commit();
 
             xdg_surface = self.xdg_wm_base.get_xdg_surface(&surface, &self.qh, entity);
 
