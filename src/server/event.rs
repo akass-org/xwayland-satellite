@@ -1392,6 +1392,9 @@ impl OutputEvent {
 
         match event {
             Event::LogicalPosition { x, y } => {
+                let x = (x as f64 * scale_factor) as i32;
+                let y = (y as f64 * scale_factor) as i32;
+
                 update_output_offset(target, OutputDimensionsSource::Xdg, x, y, state);
                 state
                     .world
