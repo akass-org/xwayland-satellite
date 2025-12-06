@@ -470,10 +470,6 @@ impl XState {
                     let mut list = Vec::new();
                     let mask = e.value_mask();
 
-                    if mask.contains(x::ConfigWindowMask::STACK_MODE) {
-                        list.push(x::ConfigWindow::StackMode(e.stack_mode()));
-                    }
-
                     if server_state.can_change_position(e.window()) {
                         if mask.contains(x::ConfigWindowMask::X) {
                             list.push(x::ConfigWindow::X(e.x().into()));
@@ -487,6 +483,10 @@ impl XState {
                     }
                     if mask.contains(x::ConfigWindowMask::HEIGHT) {
                         list.push(x::ConfigWindow::Height(e.height().into()));
+                    }
+
+                    if mask.contains(x::ConfigWindowMask::STACK_MODE) {
+                        list.push(x::ConfigWindow::StackMode(e.stack_mode()));
                     }
 
                     unwrap_or_skip_bad_window_cont!(self.connection.send_and_check_request(
