@@ -1001,14 +1001,6 @@ impl XState {
             event.atom()
         );
 
-        let motif_hints =
-            unwrap_or_skip_bad_window_ret!(self.get_motif_wm_hints(window).resolve()).unwrap();
-        debug!("motif_hints_ {:?}", motif_hints.decorations);
-        if let Some(decorations) = motif_hints.decorations {
-            debug!("motif_hints_exist");
-            server_state.set_win_decorations(window, decorations);
-        }
-
         match event.atom() {
             x if x == x::ATOM_WM_HINTS => {
                 let hints =
