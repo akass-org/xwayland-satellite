@@ -768,10 +768,16 @@ impl Event for client::wl_pointer::Event {
                 }
                 let mut cmd = CommandBuffer::new();
 
-                let mut query = state
-                    .world
-                    .query_one::<(&WlPointer, &client::wl_seat::WlSeat, &CurrentSurface)>(target)
-                    .unwrap();
+                let Ok(mut query) =
+                    state
+                        .world
+                        .query_one::<(&WlPointer, &client::wl_seat::WlSeat, &CurrentSurface)>(
+                            target,
+                        )
+                else {
+                    warn!("could not click on surface: stale surface");
+                    return;
+                };
 
                 let (server, seat, current_surface) = query.get().unwrap();
 
