@@ -733,16 +733,13 @@ impl Event for client::wl_pointer::Event {
                 surface_y,
             } => {
                 if !handle_pending_enter(target, state, "motion") {
-                    // Query pointer server and the surface scale factor (immutable borrow so we can
-                    // also read the current surface/window). We then compute a global coordinate
-                    // (window origin + scaled surface coords) and store it into the server state.
-                    // We'll first query the pointer and scale mutably to perform the motion
-                    // callback, then drop that borrow and query the world for the current
-                    // surface/window to compute global coords. This avoids borrow conflicts.
                     return;
                 }
                 {
-                    let surface = state.world.get::<&CurrentSurface>(target).unwrap();
+                    let Ok(surface) = state.world.get::<&CurrentSurface>(target) else {
+                        warn!("could not motion on surface: stale surface");
+                        return;
+                    };
                     if let CurrentSurface::Decoration(parent) = &*surface {
                         decoration::handle_pointer_motion(state, *parent, surface_x, surface_y);
                         return;
