@@ -87,7 +87,6 @@ impl DecorationsDataSatellite {
                 .subcompositor
                 .get_subsurface(&surface, parent, &state.qh, ())
         };
-        subsurface.set_desync();
         subsurface.set_position(0, -Self::TITLEBAR_HEIGHT);
         let viewport = state.viewporter.get_viewport(&surface, &state.qh, ());
 
@@ -145,7 +144,6 @@ impl DecorationsDataSatellite {
 
     pub fn draw_decorations(&mut self, world: &World, width: i32, parent_scale_factor: f32) {
         if !self.will_draw_decorations(width) {
-            println!("not drawing ({} {})", width, self.should_draw);
             if self.remove_buffer {
                 self.surface.attach(None, 0, 0);
                 self.surface.commit();
@@ -384,8 +382,7 @@ fn title_pixmap(title: &str, max_width: u32, height: u32, scale: f32) -> Option<
 
     let width = glyphs
         .last()
-        .map(|g| g.position.x + font.h_advance(g.id))
-        .unwrap()
+        .map(|g| g.position.x + font.h_advance(g.id))?
         .ceil() as u32;
 
     let mut pixmap = Pixmap::new(width, height).unwrap();

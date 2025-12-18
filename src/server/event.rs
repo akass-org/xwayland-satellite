@@ -285,7 +285,6 @@ impl SurfaceEvents {
         target: Entity,
         state: &mut ServerState<C>,
     ) {
-        let connection = &mut state.connection;
         let state = &mut state.inner;
         let xdg_surface::Event::Configure { serial } = event else {
             unreachable!();
@@ -354,23 +353,20 @@ impl SurfaceEvents {
                 }
             }
 
-            connection.set_window_dims(
-                window,
-                PendingSurfaceState {
-                    x,
-                    y,
-                    width: width as _,
-                    height: height as _,
-                },
-            );
             window_data.attrs.dims = WindowDims {
                 x: x as i16,
                 y: y as i16,
                 width,
                 height,
             };
-
+            let pending = PendingSurfaceState {
+                x,
+                y,
+                width: width as _,
+                height: height as _,
+            };
             drop(query);
+            state.world.insert_one(target, pending).unwrap();
             update_surface_viewport(&state.world, state.world.query_one(target).unwrap());
         }
 
@@ -529,16 +525,26 @@ pub(super) fn update_surface_viewport(
             return;
         };
 
+        let decorations_height = if data.decoration.satellite.is_some() {
+            DecorationsDataSatellite::TITLEBAR_HEIGHT
+        } else {
+            0
+        };
+
         if let Some(min) = hints.min_size {
+            debug!(
+                "updated min height: {}",
+                (min.height as f64 / scale_factor.0) as i32 + decorations_height
+            );
             data.toplevel.set_min_size(
                 (min.width as f64 / scale_factor.0) as i32,
-                (min.height as f64 / scale_factor.0) as i32,
+                (min.height as f64 / scale_factor.0) as i32 + decorations_height,
             );
         }
         if let Some(max) = hints.max_size {
             data.toplevel.set_max_size(
                 (max.width as f64 / scale_factor.0) as i32,
-                (max.height as f64 / scale_factor.0) as i32,
+                (max.height as f64 / scale_factor.0) as i32 + decorations_height,
             );
         }
     }
@@ -654,7 +660,7 @@ impl Event for client::wl_pointer::Event {
                             .insert_one(target, CurrentSurface::Decoration(parent))
                             .unwrap();
                     } else {
-                        warn!("could not enter surface: stale surface");
+                        warn!("could not enter surface {}: stale surface", surface.id());
                     }
 
                     return;
@@ -706,7 +712,7 @@ impl Event for client::wl_pointer::Event {
                 if !surface.is_alive() {
                     return;
                 }
-                debug!("leaving surface ({serial})");
+                debug!("leaving surface ({})", surface.id());
                 if let Ok(CurrentSurface::Decoration(parent)) =
                     state.world.remove_one::<CurrentSurface>(target)
                 {
@@ -954,27 +960,41 @@ impl Event for client::wl_touch::Event {
             } => {
                 let mut cmd = CommandBuffer::new();
                 {
-                    let mut s_query = surface.data().copied().and_then(|key| {
-                        state
-                            .world
-                            .query_one::<(&WlSurface, &SurfaceScaleFactor)>(key)
+                    let connection = &mut state.connection;
+                    let world = &mut state.inner.world;
+                    let s_entity = surface.data().copied();
+                    let mut s_query = s_entity.and_then(|key| {
+                        world
+                            .query_one::<(&WlSurface, &SurfaceScaleFactor, &x::Window)>(key)
                             .ok()
                     });
-                    let Some((s_surface, s_factor)) = s_query.as_mut().and_then(|q| q.get()) else {
-                        return;
-                    };
-
-                    cmd.insert(target, (*s_factor,));
-                    let touch = state.world.get::<&WlTouch>(target).unwrap();
-                    touch.down(serial, time, s_surface, id, x * s_factor.0, y * s_factor.0);
+                    if let Some((s_surface, s_factor, window)) =
+                        s_query.as_mut().and_then(|q| q.get())
+                    {
+                        cmd.insert_one(target, *s_factor);
+                        connection.raise_to_top(*window);
+                        let touch = world.get::<&WlTouch>(target).unwrap();
+                        touch.down(serial, time, s_surface, id, x * s_factor.0, y * s_factor.0);
+                    } else if let Some(&DecorationMarker { parent }) = surface.data() {
+                        drop(s_query);
+                        let seat = {
+                            let seat =
+                                &*state.world.get::<&client::wl_seat::WlSeat>(target).unwrap();
+                            seat.clone()
+                        };
+                        decoration::handle_pointer_motion(state, parent, x, y);
+                        decoration::handle_pointer_click(state, parent, &seat, serial);
+                    }
                 }
                 cmd.run_on(&mut state.world);
             }
             Self::Motion { time, id, x, y } => {
-                let (touch, scale) = state
+                let Ok((touch, scale)) = state
                     .world
                     .query_one_mut::<(&WlTouch, &SurfaceScaleFactor)>(target)
-                    .unwrap();
+                else {
+                    return;
+                };
                 touch.motion(time, id, x * scale.0, y * scale.0);
             }
             _ => {
