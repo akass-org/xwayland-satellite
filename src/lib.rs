@@ -5,7 +5,7 @@ pub mod config_reader;
 use crate::server::{NoConnection, PendingSurfaceState, ServerState};
 use crate::xstate::{RealConnection, XState};
 use log::{error, info};
-use rustix::event::{poll, PollFd, PollFlags, Timespec};
+use rustix::event::{PollFd, PollFlags, Timespec, poll};
 use server::selection::{Clipboard, Primary};
 use smithay_client_toolkit::data_device_manager::WritePipe;
 use std::io::{BufRead, BufReader, Read, Write};

@@ -5,7 +5,7 @@ use hecs::{CommandBuffer, World};
 use log::{debug, error, trace, warn};
 use macros::simple_event_shunt;
 use std::os::fd::AsFd;
-use wayland_client::{protocol as client, Proxy};
+use wayland_client::{Proxy, protocol as client};
 use wayland_protocols::{
     wp::{
         fractional_scale::v1::client::wp_fractional_scale_v1,
@@ -145,7 +145,7 @@ impl Event for SurfaceEvents {
                 let needs_server_side_decorations = window_data
                     .attrs
                     .decorations
-                    .is_none_or(|d| d == Decorations::Server);
+                    .is_none_or(|d| d.is_serverside());
 
                 if mode == Mode::ServerSide || !needs_server_side_decorations {
                     let mut role = entity.get::<&mut SurfaceRole>().unwrap();

@@ -234,6 +234,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "dlib"
+version = "0.5.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "330c60081dcc4c72131f8eb70510f1ac07223e5d4163db481a04a0befcffa412"
+dependencies = [
+ "libloading",
+]
+
+[[package]]
 name = "downcast-rs"
 version = "1.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -310,6 +319,15 @@ name = "foldhash"
 version = "0.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d9c4f5dac5e15c24eb999c26181a6ca40b39fe946cbe4c263c7209467bc83af2"
+
+[[package]]
+name = "fontconfig"
+version = "0.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b19c4bca8c705ea23bfb3e3403a9e699344d1ee3205b631f03fe4dbf1e52429f"
+dependencies = [
+ "yeslogic-fontconfig-sys",
+]
 
 [[package]]
 name = "fontdue"
@@ -1179,9 +1197,9 @@ dependencies = [
 
 [[package]]
 name = "xcb"
-version = "1.6.0"
+version = "1.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f07c123b796139bfe0603e654eaf08e132e52387ba95b252c78bad3640ba37ea"
+checksum = "ee4c580d8205abb0a5cf4eb7e927bd664e425b6c3263f9c5310583da96970cf6"
 dependencies = [
  "bitflags 1.3.2",
  "libc",
@@ -1190,9 +1208,9 @@ dependencies = [
 
 [[package]]
 name = "xcb-util-cursor"
-version = "0.3.5"
+version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bf6417c51a1f5eda49156061175021bd3ccf0a759bc7c402bbea6a6a1ae14239"
+checksum = "c256d10270e6789ebbed752ec17fcf98a04363dc97aa9b7b92ab1af3a7bc5744"
 dependencies = [
  "xcb",
  "xcb-util-cursor-sys",
@@ -1200,9 +1218,9 @@ dependencies = [
 
 [[package]]
 name = "xcb-util-cursor-sys"
-version = "0.1.6"
+version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4c78acb131647687ee62f9e64c988457f23ecb8f3a078a37a312f989b320cb47"
+checksum = "8346f6cad5cb6b38645c53431ffe35bd0634e8154f529fa9d3f5f762c03c98b6"
 dependencies = [
  "bindgen",
  "pkg-config",
@@ -1228,6 +1246,7 @@ dependencies = [
  "ab_glyph",
  "anyhow",
  "bitflags 2.10.0",
+ "fontconfig",
  "fontdue",
  "hecs",
  "log",
@@ -1247,6 +1266,17 @@ dependencies = [
  "wl_drm",
  "xcb",
  "xcb-util-cursor",
+]
+
+[[package]]
+name = "yeslogic-fontconfig-sys"
+version = "6.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "503a066b4c037c440169d995b869046827dbc71263f6e8f3be6d77d4f3229dbd"
+dependencies = [
+ "dlib",
+ "once_cell",
+ "pkg-config",
 ]
 
 [[package]]
