@@ -710,7 +710,6 @@ impl XState {
         let mut wmhint_popup = false;
         let mut has_skip_taskbar = false;
 
-
         let attrs = self
             .connection
             .send_request(&x::GetWindowAttributes { window });
@@ -788,6 +787,7 @@ impl XState {
                     self.window_atoms.dropdown_menu,
                     self.window_atoms.tooltip,
                     self.window_atoms.drag_n_drop,
+                    self.window_atoms.combo,
                 ]
                 .contains(&x) =>
                 {
@@ -1139,6 +1139,7 @@ xcb::atoms_struct! {
         utility => b"_NET_WM_WINDOW_TYPE_UTILITY" only_if_exists = false,
         tooltip => b"_NET_WM_WINDOW_TYPE_TOOLTIP" only_if_exists = false,
         kde_override => b"_KDE_NET_WM_WINDOW_TYPE_OVERRIDE" only_if_exists = false,
+        combo => b"_NET_WM_WINDOW_TYPE_COMBO" only_if_exists = false,
     }
 }
 
@@ -1223,7 +1224,7 @@ impl From<&[u32]> for WmHints {
         if flags.contains(WmHintsFlags::Input) {
             ret.acquire_input_via_wm = value[1] == 1;
         }
-        
+
         ret
     }
 }
