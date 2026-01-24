@@ -1,22 +1,22 @@
+pub mod config_reader;
 mod server;
 pub mod xstate;
-pub mod config_reader;
 
 use crate::server::{NoConnection, PendingSurfaceState, ServerState};
 use crate::xstate::{RealConnection, XState};
+use config_reader::Config;
 use log::{error, info};
 use rustix::event::{PollFd, PollFlags, Timespec, poll};
 use server::selection::{Clipboard, Primary};
 use smithay_client_toolkit::data_device_manager::WritePipe;
+use std::env;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::os::fd::{AsFd, AsRawFd, BorrowedFd, OwnedFd};
 use std::os::unix::net::UnixStream;
+use std::path::Path;
 use std::process::{Command, ExitStatus, Stdio};
 use wayland_server::{Display, ListeningSocket};
 use xcb::x;
-use std::env;
-use config_reader::Config;
-use std::path::Path;
 
 pub trait XConnection: Sized + 'static {
     type X11Selection: X11Selection;
@@ -40,6 +40,9 @@ type RealServerState = ServerState<RealConnection>;
 pub trait RunData {
     fn display(&self) -> Option<&str>;
     fn listenfds(&mut self) -> Vec<OwnedFd>;
+    fn flags(&self) -> &[String] {
+        &[]
+    }
     fn server(&self) -> Option<UnixStream> {
         None
     }
@@ -62,15 +65,16 @@ pub const fn timespec_from_millis(millis: u64) -> Timespec {
     }
 }
 
-pub fn main(mut data: impl RunData) -> Option<()> {
-    let mut version = env!("VERGEN_GIT_SHA");
+pub fn version() -> &'static str {
+    let mut version = env!("VERGEN_GIT_DESCRIBE");
     if version == "VERGEN_IDEMPOTENT_OUTPUT" {
         version = env!("CARGO_PKG_VERSION");
     }
+    version
+}
 
-    let version = format!("v{}-{}-dirty", env!("CARGO_PKG_VERSION"), version,);
-
-    info!("Starting xwayland-satellite version {version}");
+pub fn main(mut data: impl RunData) -> Option<()> {
+    info!("Starting xwayland-satellite version {}", version());
 
     let socket = ListeningSocket::bind_auto("xwls", 1..=128).unwrap();
     let mut display = Display::new().unwrap();
@@ -105,6 +109,7 @@ pub fn main(mut data: impl RunData) -> Option<()> {
             "-displayfd",
             &ready_tx.as_raw_fd().to_string(),
         ])
+        .args(data.flags())
         .env("WAYLAND_DISPLAY", socket.socket_name().unwrap())
         .stderr(Stdio::piped())
         .spawn()
