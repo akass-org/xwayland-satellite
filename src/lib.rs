@@ -65,11 +65,13 @@ pub const fn timespec_from_millis(millis: u64) -> Timespec {
     }
 }
 
-pub fn version() -> &'static str {
-    let mut version = env!("VERGEN_GIT_DESCRIBE");
+pub fn version() -> String {
+    let mut version = env!("VERGEN_GIT_SHA");
     if version == "VERGEN_IDEMPOTENT_OUTPUT" {
         version = env!("CARGO_PKG_VERSION");
     }
+
+    let version = format!("v{}-{}-dirty", env!("CARGO_PKG_VERSION"), version,);
     version
 }
 
