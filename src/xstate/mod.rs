@@ -730,7 +730,22 @@ impl XState {
         if let Some(states) = &window_state_res {
             has_skip_taskbar = Some(states.contains(&self.atoms.skip_taskbar));
         }
-        if let Some(hints) = motif_hints {
+
+        let wine = self.property_cookie_wrapper(
+            window,
+            self.atoms.wine_allow_flip,
+            x::ATOM_CARDINAL,
+            1,      // 👈 只需要 1 个 CARDINAL
+            |_| (), // 👈 不关心值
+        );
+
+        let is_wine = wine.resolve()?.is_some();
+
+        debug!("check_is_wine {:?}", is_wine);
+
+        if let Some(hints) = motif_hints
+            && !is_wine
+        {
             // If MOTIF_WM_HINTS provides no decorations for client assume its a popup
             motif_popup = hints.decorations.is_some_and(|d| d.is_clientside());
             // WMHINTS is considered popup only if client is not decorated && client does not
@@ -1123,6 +1138,7 @@ xcb::atoms_struct! {
         moveresize => b"_NET_WM_MOVERESIZE" only_if_exists = false,
         wm_model => b"_NET_WM_STATE_MODAL" only_if_exists = false,
         xwayland_global_output_scale => b"_XWAYLAND_GLOBAL_OUTPUT_SCALE" only_if_exists = false,
+        wine_allow_flip => b"_WINE_ALLOW_FLIP" only_if_exists = false,
     }
 }
 
