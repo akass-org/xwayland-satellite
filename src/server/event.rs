@@ -499,8 +499,8 @@ pub(super) fn update_surface_viewport(
     let dims = &window_data.attrs.dims;
     let size_hints = &window_data.attrs.size_hints;
 
-    let width = (dims.width as f64 / scale_factor.0) as i32;
-    let height = (dims.height as f64 / scale_factor.0) as i32;
+    let width = (dims.width as f64 / scale_factor.0).ceil() as i32;
+    let height = (dims.height as f64 / scale_factor.0).ceil() as i32;
     if width > 0 && height > 0 {
         viewport.set_destination(width, height);
     }
@@ -1013,7 +1013,7 @@ impl Event for client::wl_touch::Event {
     }
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, PartialEq, Eq)]
 pub(super) struct OnOutput(pub Entity);
 struct OutputName(String);
 fn get_output_name(output: Option<&OnOutput>, world: &World) -> Option<String> {

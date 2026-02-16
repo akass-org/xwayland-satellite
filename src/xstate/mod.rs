@@ -731,21 +731,7 @@ impl XState {
             has_skip_taskbar = Some(states.contains(&self.atoms.skip_taskbar));
         }
 
-        let wine = self.property_cookie_wrapper(
-            window,
-            self.atoms.wine_allow_flip,
-            x::ATOM_CARDINAL,
-            1,      // 👈 只需要 1 个 CARDINAL
-            |_| (), // 👈 不关心值
-        );
-
-        let is_wine = wine.resolve()?.is_some();
-
-        debug!("check_is_wine {:?}", is_wine);
-
-        if let Some(hints) = motif_hints
-            && !is_wine
-        {
+        if let Some(hints) = motif_hints {
             // If MOTIF_WM_HINTS provides no decorations for client assume its a popup
             motif_popup = hints.decorations.is_some_and(|d| d.is_clientside());
             // WMHINTS is considered popup only if client is not decorated && client does not
@@ -755,9 +741,12 @@ impl XState {
             wmhint_popup = motif_popup
                 && wm_hints.is_some_and(|h| !h.acquire_input_via_wm)
                 && !hints.functions.as_ref().is_some_and(|f| {
-                    f.contains(motif::Functions::Minimize)
-                        || f.contains(motif::Functions::Maximize)
-                        || f.contains(motif::Functions::All)
+                    f.intersects(
+                        motif::Functions::Minimize
+                            | motif::Functions::Maximize
+                            | motif::Functions::Resize
+                            | motif::Functions::All,
+                    )
                 });
             // If the motif hints indicate the user shouldn't be able to do anything
             // to the window at all, it stands to reason it's probably a popup.

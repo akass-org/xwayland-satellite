@@ -2300,8 +2300,8 @@ fn fractional_scale_small_popup() {
     {
         let data = f.testwl.get_surface_data(toplevel_id).unwrap();
         let viewport = data.viewport.as_ref().expect("Missing viewport");
-        assert_eq!(viewport.width, 66);
-        assert_eq!(viewport.height, 66);
+        assert_eq!(viewport.width, 67);
+        assert_eq!(viewport.height, 67);
     }
 
     let popup = Window::new(2);
@@ -2772,6 +2772,17 @@ fn disconnected_output_rescaling() {
     assert_eq!(f.satellite.inner.new_scale, 1.5);
 
     f.remove_output(output_ext);
+    let surface_data = f.testwl.get_surface_data(id).expect("No surface data");
+    let fractional = surface_data
+        .fractional
+        .as_ref()
+        .expect("No fractional scale for surface");
+    fractional.preferred_scale(120); // 1.0 scale
+    f.run();
+    f.run();
+    // An fractional scale change done while the surface is on a removed output is ignored
+    assert_eq!(f.satellite.inner.new_scale, 1.5);
+
     f.testwl.move_surface_to_output(id, &output_main);
     let surface_data = f.testwl.get_surface_data(id).expect("No surface data");
     let fractional = surface_data
@@ -2781,7 +2792,7 @@ fn disconnected_output_rescaling() {
     fractional.preferred_scale(240); // 2.0 scale
     f.run();
     f.run();
-    // Afteer the output is disconnected, only the 2x scale output remains, so use that scale
+    // After the output is disconnected, only the 2x scale output remains, so use that scale
     assert_eq!(f.satellite.inner.new_scale, 2.0);
 }
 
