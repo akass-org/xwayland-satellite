@@ -2,6 +2,7 @@ use regex::Regex;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{self, BufRead, BufReader};
+use std::path::Path;
 use std::time::SystemTime;
 use std::{env, fs};
 
@@ -14,7 +15,16 @@ pub struct Config {
 impl Config {
     pub fn new() -> Self {
         let home = env::var("HOME").expect("HOME env not set");
-        let path = format!("{}/.config/niri/config.kdl", home);
+        let path = {
+            let dms = format!("{}/.config/niri/dms/outputs.kdl", home);
+            let default = format!("{}/.config/niri/config.kdl", home);
+
+            if Path::new(&dms).exists() {
+                dms
+            } else {
+                default
+            }
+        };
         let scale = 1.0;
         Self {
             path,
@@ -30,7 +40,7 @@ impl Config {
 
     fn check_update(&mut self) {
         let mtime = get_file_mtime(&self.path);
-
+        println!("Checking config file: {}, mtime: {:?}", self.path, mtime);
         if mtime.is_some() && mtime != self.mtime {
             println!("File changed, reloading...");
             match self.get_scale_from_file() {
@@ -79,6 +89,8 @@ impl Config {
                 }
             }
         }
+
+        println!("Scales found: {:?}", scales);
 
         if scales.is_empty() {
             Err(io::Error::new(io::ErrorKind::NotFound, "No scales found"))
