@@ -40,7 +40,7 @@ impl Config {
 
     fn check_update(&mut self) {
         let mtime = get_file_mtime(&self.path);
-        println!("Checking config file: {}, mtime: {:?}", self.path, mtime);
+        // println!("Checking config file: {}, mtime: {:?}", self.path, mtime);
         if mtime.is_some() && mtime != self.mtime {
             println!("File changed, reloading...");
             match self.get_scale_from_file() {
